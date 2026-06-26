@@ -1,0 +1,33 @@
+# systemd unit to keep the pi-calendar-display proxy running.
+#
+# Installation:
+#   1. Edit the User / WorkingDirectory / ExecStart paths for your environment.
+#   2. sudo cp calendar-dashboard.service /etc/systemd/system/
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable --now calendar-dashboard
+#   Logs: journalctl -u calendar-dashboard -f
+#
+# To run screen power control (the remote's screenPower) from this service, you
+# must pass environment variables so it reaches the session the kiosk runs in
+# (see README).
+#   X11 example:     Environment=DISPLAY=:0 XAUTHORITY=/home/pi/.Xauthority
+#   Wayland example: Environment=WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000
+
+[Unit]
+Description=pi-calendar-display proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/pi-calendar-display
+ExecStart=/usr/bin/node /home/pi/pi-calendar-display/server.js
+Restart=always
+RestartSec=5
+# Enable and adjust the following if you use screen power control.
+# Environment=DISPLAY=:0
+# Environment=XAUTHORITY=/home/pi/.Xauthority
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <meta name="theme-color" content="#0a0d12" />
+    <title>リモコン</title>
+    <style>
+      :root {
+        --ink: #f2ede3;
+        --ink-dim: rgba(242, 237, 227, 0.55);
+        --ink-faint: rgba(242, 237, 227, 0.32);
+        --gold: #e3b778;
+        --line: rgba(242, 237, 227, 0.13);
+        --glass: rgba(255, 255, 255, 0.05);
+        --glass-press: rgba(255, 255, 255, 0.12);
+        --sans: -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP",
+          "Segoe UI", Roboto, sans-serif;
+        --serif: var(--sans);
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
+      body {
+        font-family: var(--sans);
+        background: #0a0d12;
+        color: var(--ink);
+        min-height: 100vh;
+        padding: 32px 20px 48px;
+        -webkit-font-smoothing: antialiased;
+        position: relative;
+        overflow-x: hidden;
+      }
+      .aurora {
+        position: fixed;
+        inset: -25%;
+        z-index: 0;
+        filter: blur(60px) saturate(135%);
+        opacity: 0.7;
+        background:
+          radial-gradient(42% 30% at 18% 8%, rgba(64, 168, 158, 0.55), transparent 70%),
+          radial-gradient(46% 32% at 86% 14%, rgba(112, 90, 196, 0.5), transparent 72%),
+          radial-gradient(60% 40% at 50% 100%, rgba(228, 160, 96, 0.4), transparent 72%);
+      }
+      .wrap {
+        position: relative;
+        z-index: 1;
+        max-width: 480px;
+        margin: 0 auto;
+      }
+
+      .masthead {
+        margin-bottom: 6px;
+      }
+      .kicker {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.4em;
+        text-transform: uppercase;
+        color: var(--gold);
+        opacity: 0.85;
+      }
+      h1 {
+        font-family: var(--sans);
+        font-weight: 700;
+        font-size: 27px;
+        line-height: 1.15;
+        margin-top: 4px;
+        letter-spacing: 0.01em;
+      }
+      .sub {
+        font-size: 12px;
+        color: var(--ink-faint);
+        margin: 8px 0 24px;
+        letter-spacing: 0.02em;
+      }
+
+      .status {
+        position: relative;
+        background: var(--glass);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 18px 20px;
+        margin-bottom: 26px;
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        overflow: hidden;
+      }
+      .status::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 50%;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent);
+        pointer-events: none;
+      }
+      .status .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px 12px;
+      }
+      .stat {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .stat .k {
+        font-size: 10px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+      .stat .v {
+        font-family: var(--sans);
+        font-size: 21px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      .stat .v small {
+        font-family: var(--sans);
+        font-size: 12px;
+        color: var(--ink-dim);
+        font-weight: 500;
+        margin-left: 4px;
+      }
+
+      section {
+        margin-bottom: 24px;
+      }
+      .lbl {
+        font-size: 11px;
+        color: var(--ink-faint);
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.22em;
+      }
+      .row {
+        display: flex;
+        gap: 10px;
+      }
+      button {
+        flex: 1;
+        appearance: none;
+        border: 1px solid var(--line);
+        background: var(--glass);
+        color: var(--ink);
+        font-size: 16px;
+        font-weight: 600;
+        font-family: inherit;
+        padding: 18px 10px;
+        border-radius: 16px;
+        cursor: pointer;
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        transition: background 0.14s, transform 0.06s, border-color 0.14s;
+      }
+      button:active {
+        transform: scale(0.96);
+        background: var(--glass-press);
+        border-color: rgba(242, 237, 227, 0.25);
+      }
+      button.accent {
+        border-color: rgba(227, 183, 120, 0.5);
+        color: var(--gold);
+      }
+      button.danger {
+        border-color: rgba(224, 122, 122, 0.45);
+        color: #e79a9a;
+      }
+      .segmented {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .segmented button {
+        flex: 1 1 28%;
+        font-size: 15px;
+        padding: 14px 6px;
+      }
+      .segmented button.on {
+        background: rgba(227, 183, 120, 0.16);
+        border-color: rgba(227, 183, 120, 0.6);
+        color: var(--gold);
+      }
+      .nightbox {
+        background: var(--glass);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 6px 16px;
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+      }
+      .nbrow {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .nbrow + .nbrow {
+        border-top: 1px solid var(--line);
+      }
+      .nbrow input[type="time"] {
+        background: #1a1f2a;
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-size: 16px;
+        font-family: inherit;
+      }
+      .nbrow input[type="checkbox"] {
+        width: 26px;
+        height: 26px;
+        accent-color: var(--gold);
+      }
+      .slider-wrap {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        background: var(--glass);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 16px 18px;
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+      }
+      input[type="range"] {
+        flex: 1;
+        accent-color: var(--gold);
+        height: 28px;
+      }
+      .pct {
+        font-family: var(--sans);
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+        font-size: 18px;
+        min-width: 52px;
+        text-align: right;
+        color: var(--gold);
+      }
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 28px;
+        z-index: 5;
+        transform: translateX(-50%) translateY(90px);
+        background: rgba(20, 24, 30, 0.92);
+        border: 1px solid rgba(227, 183, 120, 0.4);
+        color: var(--gold);
+        padding: 11px 22px;
+        border-radius: 999px;
+        font-size: 14px;
+        font-weight: 600;
+        opacity: 0;
+        transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.28s;
+        pointer-events: none;
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+      }
+      .toast.show {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="aurora"></div>
+    <div class="wrap">
+      <div class="masthead">
+        <span class="kicker">Remote</span>
+        <h1>カレンダーディスプレイ</h1>
+      </div>
+      <div class="sub">同一 LAN 内からの操作専用</div>
+
+      <div class="status">
+        <div class="grid">
+          <div class="stat">
+            <span class="k">Brightness</span>
+            <span class="v"><span id="stBright">--</span><small id="stMode2"></small></span>
+          </div>
+          <div class="stat">
+            <span class="k">View</span>
+            <span class="v" id="stView" style="font-family: var(--sans); font-size: 17px; font-weight: 600">--</span>
+          </div>
+          <div class="stat">
+            <span class="k">Background</span>
+            <span class="v" id="stBg" style="font-family: var(--sans); font-size: 15px; font-weight: 500">--</span>
+          </div>
+          <div class="stat">
+            <span class="k">Screen</span>
+            <span class="v" id="stScreen" style="font-family: var(--sans); font-size: 17px; font-weight: 600">--</span>
+          </div>
+        </div>
+      </div>
+
+      <section>
+        <div class="lbl">背景</div>
+        <div class="row">
+          <button onclick="cmd('prevBackground')">◀ 前の背景</button>
+          <button onclick="cmd('nextBackground')">次の背景 ▶</button>
+        </div>
+        <div class="row" style="margin-top: 10px">
+          <button class="accent" onclick="document.getElementById('bgfile').click()">
+            ⤓ 画像をアップロード
+          </button>
+        </div>
+        <input
+          type="file"
+          id="bgfile"
+          accept="image/jpeg,image/png,image/webp"
+          style="display: none"
+          onchange="uploadBg(this.files[0]); this.value = ''"
+        />
+      </section>
+
+      <section>
+        <div class="lbl">表示モード</div>
+        <div class="segmented" id="viewSeg">
+          <button data-mode="full" onclick="setView('full')">通常</button>
+          <button data-mode="timeline" onclick="setView('timeline')">タイムライン</button>
+          <button data-mode="week" onclick="setView('week')">週</button>
+          <button data-mode="month" onclick="setView('month')">月</button>
+          <button data-mode="night" onclick="setView('night')">ナイト</button>
+        </div>
+      </section>
+
+      <section>
+        <div class="lbl">自動ナイト（時間帯で自動切替→元のモードに復帰）</div>
+        <div class="nightbox">
+          <label class="nbrow">
+            <span>有効</span>
+            <input type="checkbox" id="nEnabled" onchange="saveNight()" />
+          </label>
+          <div class="nbrow">
+            <span>開始</span>
+            <input type="time" id="nFrom" onchange="saveNight()" />
+          </div>
+          <div class="nbrow">
+            <span>終了</span>
+            <input type="time" id="nTo" onchange="saveNight()" />
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="lbl">更新</div>
+        <div class="row">
+          <button class="accent" onclick="cmd('resync')">↻ 今すぐ更新</button>
+        </div>
+      </section>
+
+      <section>
+        <div class="lbl">明るさ</div>
+        <div class="slider-wrap">
+          <input
+            type="range"
+            id="bright"
+            min="0"
+            max="100"
+            step="5"
+            oninput="onSlide(this.value)"
+            onchange="setBright(this.value)"
+          />
+          <span class="pct" id="brightPct">--%</span>
+        </div>
+        <div class="row" style="margin-top: 10px">
+          <button onclick="cmd('cycleBrightness')">明るさ循環</button>
+          <button onclick="cmd('clearBrightness')">自動に戻す</button>
+        </div>
+      </section>
+
+      <section>
+        <div class="lbl">画面電源</div>
+        <div class="row">
+          <button class="accent" onclick="cmd('screenPower', 'on')">画面 ON</button>
+          <button class="danger" onclick="cmd('screenPower', 'off')">画面 OFF</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+      "use strict";
+      let sliding = false;
+
+      function toast(msg) {
+        const t = document.getElementById("toast");
+        t.textContent = msg;
+        t.classList.add("show");
+        clearTimeout(t._t);
+        t._t = setTimeout(() => t.classList.remove("show"), 1400);
+      }
+
+      async function cmd(action, value) {
+        try {
+          const res = await fetch("/api/command", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action, value }),
+          });
+          if (!res.ok) {
+            const e = await res.json().catch(() => ({}));
+            toast("エラー: " + (e.error || res.status));
+            return;
+          }
+          const data = await res.json();
+          render(data.display);
+          toast("OK");
+        } catch (err) {
+          toast("通信エラー");
+        }
+      }
+
+      async function uploadBg(file) {
+        if (!file) return;
+        if (file.size > 12 * 1024 * 1024) {
+          toast("12MB以下の画像にしてください");
+          return;
+        }
+        toast("アップロード中…");
+        try {
+          const res = await fetch("/api/background", {
+            method: "POST",
+            headers: { "Content-Type": file.type || "application/octet-stream" },
+            body: file,
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            toast("エラー: " + (data.error || res.status));
+            return;
+          }
+          render(data.display);
+          toast("背景を更新しました");
+        } catch (err) {
+          toast("通信エラー");
+        }
+      }
+
+      function setView(mode) {
+        cmd("setView", mode);
+      }
+
+      let nightEditing = false; // 入力中はポーリングで上書きしない
+      function saveNight() {
+        nightEditing = true;
+        cmd("setNightWindow", {
+          enabled: document.getElementById("nEnabled").checked,
+          from: document.getElementById("nFrom").value || undefined,
+          to: document.getElementById("nTo").value || undefined,
+        });
+        setTimeout(() => (nightEditing = false), 1000);
+      }
+
+      function onSlide(v) {
+        sliding = true;
+        document.getElementById("brightPct").textContent = v + "%";
+      }
+      function setBright(v) {
+        sliding = false;
+        cmd("setBrightness", Number(v));
+      }
+
+      const VIEW_LABEL = {
+        full: "通常",
+        timeline: "タイムライン",
+        week: "週",
+        month: "月",
+        night: "ナイト",
+      };
+      // server からの値はすべて textContent で反映し、HTML 文字列連結を避ける（XSS 対策）。
+      function render(d) {
+        if (!d) return;
+        document.getElementById("stBright").textContent = d.brightness + "%";
+        document.getElementById("stMode2").textContent =
+          d.brightnessOverride != null ? "手動" : "自動";
+        document.getElementById("stView").textContent =
+          VIEW_LABEL[d.view] || d.view;
+        // セグメントトグルの現在モードを強調。
+        document.querySelectorAll("#viewSeg button").forEach((b) => {
+          b.classList.toggle("on", b.dataset.mode === d.view);
+        });
+        document.getElementById("stBg").textContent = d.background || "-";
+        document.getElementById("stScreen").textContent =
+          d.screen === "off" ? "OFF" : "ON";
+        // 自動ナイトの設定を反映（入力中は触らない）。
+        if (d.night && !nightEditing) {
+          document.getElementById("nEnabled").checked = !!d.night.enabled;
+          if (d.night.from) document.getElementById("nFrom").value = d.night.from;
+          if (d.night.to) document.getElementById("nTo").value = d.night.to;
+        }
+        if (!sliding) {
+          document.getElementById("bright").value = d.brightness;
+          document.getElementById("brightPct").textContent = d.brightness + "%";
+        }
+      }
+
+      async function poll() {
+        try {
+          const res = await fetch("/api/data", { cache: "no-store" });
+          if (res.ok) {
+            const data = await res.json();
+            render(data.display);
+          }
+        } catch {}
+      }
+
+      poll();
+      setInterval(poll, 5000);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,58 @@
+{
+  "google": {
+    "_comment": "Prefer putting secrets in .env (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET). You may also set them here directly.",
+    "clientId": "",
+    "clientSecret": "",
+    "redirectUri": "http://localhost:3000/oauth2callback"
+  },
+  "calendars": [
+    { "id": "primary", "label": "Main", "role": "events" },
+    {
+      "id": "xxxx@group.calendar.google.com",
+      "label": "Work location",
+      "role": "location"
+    }
+  ],
+  "weather": {
+    "latitude": 35.6895,
+    "longitude": 139.6917,
+    "locationName": "Tokyo",
+    "timezone": "Asia/Tokyo"
+  },
+  "server": {
+    "port": 3000,
+    "calendarRefreshSeconds": 60,
+    "weatherRefreshSeconds": 1800
+  },
+  "allDayLocationKeywords": [
+    "home",
+    "remote",
+    "office",
+    "WFH",
+    "on-site",
+    "business trip"
+  ],
+  "display": {
+    "brightness": {
+      "method": "software",
+      "transitionMinutes": 30,
+      "schedule": [
+        { "from": "06:00", "level": 100 },
+        { "from": "20:00", "level": 50 },
+        { "from": "23:00", "level": 15 }
+      ]
+    },
+    "view": {
+      "schedule": [{ "from": "00:00", "mode": "full" }],
+      "night": { "from": "23:00", "to": "06:00" }
+    }
+  },
+  "remote": {
+    "enabled": true,
+    "backgrounds": ["bg.jpg"],
+    "screenPower": {
+      "off": "xset dpms force off",
+      "on": "xset dpms force on"
+    }
+  }
+}

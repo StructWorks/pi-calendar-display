@@ -1,0 +1,1324 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Calendar Display</title>
+    <style>
+      :root {
+        --ink: #f2ede3; /* 暖かいアイボリー */
+        --ink-dim: rgba(242, 237, 227, 0.58);
+        --ink-faint: rgba(242, 237, 227, 0.34);
+        --gold: #e3b778;
+        --line: rgba(242, 237, 227, 0.12);
+        --glass: rgba(255, 255, 255, 0.045);
+        --glass-2: rgba(255, 255, 255, 0.07);
+        --radius: 22px;
+        --sans: -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP",
+          "Segoe UI", Roboto, sans-serif;
+        --serif: var(--sans); /* 旧デザインのシステムフォントに統一 */
+        --num: tabular-nums;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+      }
+
+      body {
+        font-family: var(--sans);
+        color: var(--ink);
+        background-color: #0a0d12;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+        position: relative;
+      }
+
+      /* ---------- オーロラ背景（写真未設定時のアンビエント） ---------- */
+      .aurora {
+        position: fixed;
+        inset: -20%;
+        z-index: 0;
+        filter: blur(52px) saturate(135%);
+        background:
+          radial-gradient(40% 48% at 16% 20%, rgba(64, 168, 158, 0.62), transparent 70%),
+          radial-gradient(44% 52% at 84% 26%, rgba(112, 90, 196, 0.58), transparent 72%),
+          radial-gradient(48% 56% at 64% 90%, rgba(228, 160, 96, 0.5), transparent 70%),
+          radial-gradient(52% 62% at 26% 84%, rgba(44, 108, 136, 0.52), transparent 74%);
+        animation: drift 38s ease-in-out infinite alternate;
+      }
+
+      /* ---------- 背景写真（オーロラの上。404/未設定ならオーロラが透ける） ---------- */
+      .photo {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        opacity: 0;
+        transition: opacity 1.2s ease;
+      }
+      .photo.shown {
+        opacity: 1;
+      }
+      @keyframes drift {
+        0% {
+          transform: translate3d(-3%, -2%, 0) scale(1.05) rotate(0deg);
+        }
+        50% {
+          transform: translate3d(4%, 3%, 0) scale(1.12) rotate(4deg);
+        }
+        100% {
+          transform: translate3d(-2%, 4%, 0) scale(1.08) rotate(-3deg);
+        }
+      }
+
+      /* ---------- 可読性スクリム ---------- */
+      .scrim {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        background:
+          radial-gradient(120% 90% at 15% 10%, rgba(8, 10, 14, 0.2), transparent 55%),
+          linear-gradient(180deg, rgba(8, 10, 14, 0.55) 0%, rgba(8, 10, 14, 0.28) 38%, rgba(8, 10, 14, 0.66) 100%);
+      }
+
+      /* ---------- フィルムグレイン ---------- */
+      .grain {
+        position: fixed;
+        inset: 0;
+        z-index: 2;
+        pointer-events: none;
+        opacity: 0.05;
+        mix-blend-mode: overlay;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      }
+
+      /* ---------- 明るさ暗幕（最前面） ---------- */
+      .dimmer {
+        position: fixed;
+        inset: 0;
+        z-index: 998;
+        background: #05070a;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 2.2s ease;
+      }
+
+      /* ===================== レイアウト ===================== */
+      .app {
+        position: relative;
+        z-index: 3;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        padding: 5.2vh 4.6vw;
+        gap: 3vh;
+      }
+      .app > * {
+        opacity: 0;
+        transform: translateY(14px);
+        animation: rise 1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      }
+      .app > *:nth-child(1) { animation-delay: 0.05s; }
+      .app > *:nth-child(2) { animation-delay: 0.22s; }
+      .app > *:nth-child(3) { animation-delay: 0.36s; }
+      @keyframes rise {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .kicker {
+        font-family: var(--sans);
+        font-size: 1.7vh;
+        font-weight: 600;
+        letter-spacing: 0.42em;
+        text-transform: uppercase;
+        color: var(--gold);
+        opacity: 0.85;
+      }
+
+      /* ---------- ヘッダー ---------- */
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 3vw;
+      }
+      .clock {
+        font-family: var(--sans);
+        font-weight: 700;
+        font-size: 18vh;
+        line-height: 0.84;
+        letter-spacing: -0.02em;
+        font-variant-numeric: var(--num);
+        text-shadow: 0 0.4vh 5vh rgba(227, 183, 120, 0.18);
+      }
+      .clock .colon {
+        color: var(--gold);
+        opacity: 0.9;
+        margin: 0 0.5vw;
+        animation: pulse 4s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 0.9; }
+        50% { opacity: 0.45; }
+      }
+      .date {
+        font-family: var(--sans);
+        font-weight: 500;
+        font-size: 3.4vh;
+        margin-top: 1.8vh;
+        color: var(--ink-dim);
+        letter-spacing: 0.04em;
+      }
+
+      .right {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 1.8vh;
+      }
+      .loc-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.7vw;
+        background: var(--glass-2);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 1vh 1.6vw;
+        font-size: 2.5vh;
+        font-weight: 600;
+        color: var(--gold);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+      }
+      .loc-badge svg {
+        width: 3vh;
+        height: 3vh;
+      }
+      .loc-badge.hidden {
+        display: none;
+      }
+
+      .weather {
+        display: flex;
+        align-items: stretch;
+        gap: 1.1vw;
+      }
+      .wx-now {
+        background: var(--glass-2);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 1.6vh 1.6vw;
+        min-width: 11vw;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5vh;
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+      }
+      .wx-now .label {
+        font-size: 1.9vh;
+        color: var(--gold);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        opacity: 0.9;
+      }
+      .wx-now svg {
+        width: 5.4vh;
+        height: 5.4vh;
+        stroke-width: 1.6;
+        color: var(--ink);
+      }
+      .wx-now .temp {
+        font-family: var(--sans);
+        font-weight: 600;
+        font-size: 5vh;
+        line-height: 0.95;
+        letter-spacing: -0.01em;
+        font-variant-numeric: var(--num);
+      }
+      .wx-now .place {
+        font-size: 1.9vh;
+        color: var(--ink-dim);
+        letter-spacing: 0.06em;
+      }
+      .wx-day {
+        background: var(--glass);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 1.6vh 1.5vw;
+        min-width: 11vw;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.7vh;
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+      }
+      .wx-day .label {
+        font-size: 1.9vh;
+        color: var(--ink-faint);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .wx-day svg {
+        width: 5.4vh;
+        height: 5.4vh;
+        stroke-width: 1.6;
+        color: var(--ink);
+      }
+      .wx-day .range {
+        font-family: var(--sans);
+        font-size: 2.8vh;
+        font-weight: 600;
+        font-variant-numeric: var(--num);
+      }
+      .wx-day .range .min {
+        color: var(--ink-dim);
+        font-weight: 400;
+      }
+      .wx-day .pop {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4vw;
+        font-size: 1.9vh;
+        color: #9fcdf0;
+        font-variant-numeric: tabular-nums;
+      }
+      .wx-day .pop svg {
+        width: 2vh;
+        height: 2vh;
+        stroke-width: 1.8;
+      }
+
+      /* ---------- 終日チップ ---------- */
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.9vw;
+      }
+      .chips .chip-kicker {
+        font-size: 1.5vh;
+        font-weight: 600;
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        margin-right: 0.4vw;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.6vw;
+        background: var(--glass);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0.9vh 1.4vw;
+        font-size: 2.4vh;
+        font-weight: 500;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+      .chip .dot {
+        width: 1.2vh;
+        height: 1.2vh;
+        border-radius: 50%;
+        flex: none;
+        box-shadow: 0 0 10px currentColor;
+      }
+      .chips:empty {
+        display: none;
+      }
+
+      /* ---------- 2カラム ---------- */
+      .columns {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2vw;
+        min-height: 0;
+      }
+      .col {
+        position: relative;
+        background: var(--glass);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 3vh 2.4vw;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        box-shadow: 0 2vh 6vh rgba(0, 0, 0, 0.28),
+          inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      }
+      .col::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 50%;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
+        pointer-events: none;
+      }
+      .col-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        margin-bottom: 2.4vh;
+        padding-bottom: 1.8vh;
+        border-bottom: 1px solid var(--line);
+      }
+      .col-head .titles {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6vh;
+      }
+      .col-head h2 {
+        font-family: var(--sans);
+        font-weight: 700;
+        font-size: 3.6vh;
+        line-height: 1;
+        letter-spacing: 0.01em;
+      }
+      .col-head .mini-loc {
+        font-size: 2.1vh;
+        color: var(--gold);
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4vw;
+      }
+      .col-head .mini-loc svg {
+        width: 2.4vh;
+        height: 2.4vh;
+      }
+      .col-head .mini-loc.hidden {
+        display: none;
+      }
+
+      .events {
+        list-style: none;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .event {
+        display: flex;
+        align-items: baseline;
+        gap: 1.3vw;
+        padding: 1.5vh 0;
+        border-bottom: 1px solid rgba(242, 237, 227, 0.06);
+      }
+      .event:last-child {
+        border-bottom: none;
+      }
+      .event .time {
+        font-family: var(--sans);
+        font-size: 2.8vh;
+        font-weight: 600;
+        font-variant-numeric: var(--num);
+        color: var(--ink);
+        flex: none;
+        min-width: 6vw;
+      }
+      .event .bar {
+        width: 3px;
+        align-self: stretch;
+        border-radius: 999px;
+        flex: none;
+        box-shadow: 0 0 10px currentColor;
+      }
+      .event .title {
+        font-size: 2.9vh;
+        font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: rgba(242, 237, 227, 0.92);
+      }
+      .empty {
+        color: var(--ink-faint);
+        font-family: var(--sans);
+        font-size: 2.7vh;
+        margin-top: 1vh;
+      }
+
+      .stale {
+        position: fixed;
+        bottom: 2.4vh;
+        right: 2.6vw;
+        z-index: 4;
+        font-size: 1.8vh;
+        color: var(--ink-faint);
+        letter-spacing: 0.04em;
+        display: none;
+      }
+      .stale.show {
+        display: block;
+      }
+
+      /* ===================== タイムライン ===================== */
+      .timeline {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2vw;
+        min-height: 0;
+      }
+      .tl-col {
+        position: relative;
+        background: var(--glass);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 3vh 2vw 2vh;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        box-shadow: 0 2vh 6vh rgba(0, 0, 0, 0.28),
+          inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      }
+      .tl-grid {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        margin-left: 7vw; /* 時刻ラベルのぶん */
+      }
+      .tl-hour {
+        position: absolute;
+        left: 0;
+        right: 0;
+        border-top: 1px solid rgba(242, 237, 227, 0.08);
+        transform: translateY(-0.5px);
+      }
+      .tl-hour span {
+        position: absolute;
+        left: -7vw;
+        top: -1.4vh;
+        width: 6vw;
+        text-align: right;
+        font-size: 1.9vh;
+        color: var(--ink-faint);
+        font-variant-numeric: var(--num);
+      }
+      .tl-event {
+        position: absolute;
+        min-height: 4.4vh;
+        border-radius: 12px;
+        padding: 0.7vh 1vw;
+        background: var(--glass-2);
+        border: 1px solid var(--line);
+        border-left: 4px solid var(--c, var(--gold));
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 0.2vh;
+        box-shadow: 0 1vh 2.4vh rgba(0, 0, 0, 0.25);
+      }
+      .tl-event .t {
+        font-size: 1.8vh;
+        font-weight: 600;
+        color: var(--c, var(--ink));
+        font-variant-numeric: var(--num);
+        white-space: nowrap;
+      }
+      .tl-event .ti {
+        font-size: 2.2vh;
+        font-weight: 500;
+        color: rgba(242, 237, 227, 0.94);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .tl-now {
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 0;
+        border-top: 2px solid var(--gold);
+        z-index: 4;
+        box-shadow: 0 0 10px rgba(227, 183, 120, 0.5);
+      }
+      .tl-now::before {
+        content: "";
+        position: absolute;
+        left: -0.5vw;
+        top: -0.6vh;
+        width: 1vh;
+        height: 1vh;
+        border-radius: 50%;
+        background: var(--gold);
+      }
+      .tl-empty {
+        position: absolute;
+        top: 40%;
+        left: 0;
+        right: 0;
+        text-align: center;
+        color: var(--ink-faint);
+        font-size: 2.4vh;
+      }
+
+      /* ===================== 週ビュー ===================== */
+      .calweek {
+        flex: 1;
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 0.9vw;
+        min-height: 0;
+      }
+      .wk-col {
+        position: relative;
+        background: var(--glass);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 1.6vh 0.8vw;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+      }
+      .wk-col.today {
+        border-color: rgba(227, 183, 120, 0.55);
+        background: rgba(227, 183, 120, 0.07);
+      }
+      .wk-col .wk-dow {
+        font-size: 1.7vh;
+        letter-spacing: 0.12em;
+        color: var(--ink-faint);
+        text-transform: uppercase;
+      }
+      .wk-col.sun .wk-dow {
+        color: #e69b8a;
+      }
+      .wk-col.sat .wk-dow {
+        color: #8fb8e6;
+      }
+      .wk-col .wk-date {
+        font-size: 3.2vh;
+        font-weight: 600;
+        font-variant-numeric: var(--num);
+        margin-bottom: 1vh;
+        line-height: 1;
+      }
+      .wk-col.today .wk-date {
+        color: var(--gold);
+      }
+      .wk-evs {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 0.7vh;
+        overflow: hidden;
+      }
+      .wk-ev {
+        border-left: 3px solid var(--c, var(--gold));
+        padding-left: 0.5vw;
+        line-height: 1.15;
+      }
+      .wk-ev .t {
+        display: block;
+        font-size: 1.5vh;
+        font-weight: 600;
+        color: var(--c, var(--ink-dim));
+        font-variant-numeric: var(--num);
+      }
+      .wk-ev .ti {
+        display: block;
+        font-size: 1.7vh;
+        color: rgba(242, 237, 227, 0.92);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .wk-more {
+        font-size: 1.5vh;
+        color: var(--ink-faint);
+        margin-top: 0.3vh;
+      }
+
+      /* ===================== 月ビュー ===================== */
+      .calmonth {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        gap: 1vh;
+      }
+      .cm-head {
+        display: flex;
+        align-items: baseline;
+        gap: 1vw;
+      }
+      .cm-dow {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 0.6vw;
+      }
+      .cm-dow span {
+        text-align: center;
+        font-size: 1.7vh;
+        letter-spacing: 0.1em;
+        color: var(--ink-faint);
+      }
+      .cm-dow span.sun {
+        color: #e69b8a;
+      }
+      .cm-dow span.sat {
+        color: #8fb8e6;
+      }
+      .cm-grid {
+        flex: 1;
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        grid-auto-rows: 1fr;
+        gap: 0.6vw;
+        min-height: 0;
+      }
+      .cm-cell {
+        position: relative;
+        background: var(--glass);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 0.8vh 0.6vw;
+        display: flex;
+        flex-direction: column;
+        gap: 0.4vh;
+        overflow: hidden;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+      .cm-cell.other {
+        opacity: 0.4;
+      }
+      .cm-cell.today {
+        border-color: rgba(227, 183, 120, 0.6);
+        background: rgba(227, 183, 120, 0.08);
+      }
+      .cm-cell .d {
+        font-size: 2vh;
+        font-weight: 600;
+        font-variant-numeric: var(--num);
+        line-height: 1;
+      }
+      .cm-cell.today .d {
+        color: var(--gold);
+      }
+      .cm-cell .d.sun {
+        color: #e69b8a;
+      }
+      .cm-cell .d.sat {
+        color: #8fb8e6;
+      }
+      .cm-ev {
+        display: flex;
+        align-items: center;
+        gap: 0.4vw;
+        font-size: 1.45vh;
+        line-height: 1.2;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        color: rgba(242, 237, 227, 0.9);
+      }
+      .cm-ev .dot {
+        width: 0.9vh;
+        height: 0.9vh;
+        border-radius: 50%;
+        flex: none;
+      }
+      .cm-more {
+        font-size: 1.4vh;
+        color: var(--ink-faint);
+      }
+
+      /* ===================== ビュー切替 ===================== */
+      .timeline,
+      .calweek,
+      .calmonth {
+        display: none;
+      }
+      body[data-view="timeline"] .columns,
+      body[data-view="week"] .columns,
+      body[data-view="month"] .columns {
+        display: none;
+      }
+      body[data-view="timeline"] .timeline {
+        display: grid;
+      }
+      body[data-view="week"] .calweek {
+        display: grid;
+      }
+      body[data-view="month"] .calmonth {
+        display: flex;
+      }
+
+      /* ===================== 表示モード: night ===================== */
+      body[data-view="night"] .timeline,
+      body[data-view="night"] .calweek,
+      body[data-view="night"] .calmonth,
+      body[data-view="night"] .right,
+      body[data-view="night"] .chips,
+      body[data-view="night"] .columns,
+      body[data-view="night"] .stale {
+        display: none;
+      }
+      body[data-view="night"] .aurora {
+        opacity: 0.4;
+      }
+      body[data-view="night"] .app {
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+      }
+      body[data-view="night"] header {
+        flex-direction: column;
+        align-items: center;
+      }
+      body[data-view="night"] .clock {
+        font-size: 32vh;
+        font-weight: 600;
+        text-shadow: 0 0 12vh rgba(227, 183, 120, 0.22);
+      }
+      body[data-view="night"] .date {
+        font-size: 5vh;
+        margin-top: 3vh;
+      }
+    </style>
+  </head>
+  <body data-view="full">
+    <div class="aurora"></div>
+    <div class="photo" id="photo"></div>
+    <div class="scrim"></div>
+    <div class="grain"></div>
+    <div class="dimmer" id="dimmer"></div>
+
+    <div class="app">
+      <header>
+        <div class="head-left">
+          <div class="clock" id="clock">--<span class="colon">:</span>--</div>
+          <div class="date" id="date"></div>
+        </div>
+        <div class="right">
+          <div class="loc-badge hidden" id="locToday"></div>
+          <div class="weather" id="weather"></div>
+        </div>
+      </header>
+
+      <div class="chips" id="chips"></div>
+
+      <div class="columns">
+        <section class="col">
+          <div class="col-head">
+            <div class="titles">
+              <span class="kicker">Today</span>
+              <h2>今日</h2>
+            </div>
+          </div>
+          <ul class="events" id="todayList"></ul>
+        </section>
+        <section class="col">
+          <div class="col-head">
+            <div class="titles">
+              <span class="kicker">Tomorrow</span>
+              <h2>明日</h2>
+            </div>
+            <span class="mini-loc hidden" id="locTomorrow"></span>
+          </div>
+          <ul class="events" id="tomorrowList"></ul>
+        </section>
+      </div>
+
+      <div class="timeline">
+        <section class="tl-col">
+          <div class="col-head">
+            <div class="titles">
+              <span class="kicker">Today</span>
+              <h2>今日</h2>
+            </div>
+          </div>
+          <div class="tl-grid" id="tlToday"></div>
+        </section>
+        <section class="tl-col">
+          <div class="col-head">
+            <div class="titles">
+              <span class="kicker">Tomorrow</span>
+              <h2>明日</h2>
+            </div>
+            <span class="mini-loc hidden" id="locTomorrow2"></span>
+          </div>
+          <div class="tl-grid" id="tlTomorrow"></div>
+        </section>
+      </div>
+
+      <div class="calweek" id="calweek"></div>
+
+      <div class="calmonth">
+        <div class="cm-head">
+          <span class="kicker" id="cmTitle">Month</span>
+        </div>
+        <div class="cm-dow" id="cmDow"></div>
+        <div class="cm-grid" id="cmGrid"></div>
+      </div>
+    </div>
+
+    <div class="stale" id="stale"></div>
+
+    <script>
+      "use strict";
+
+      // ---------------------------------------------------------------------
+      // インライン SVG アイコン（viewBox 0 0 24 24, stroke=currentColor）
+      // ---------------------------------------------------------------------
+      const A =
+        'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+      const ICONS = {
+        clear: `<circle cx="12" cy="12" r="4.2" ${A}/><g ${A}><path d="M12 2.5v2.4"/><path d="M12 19.1v2.4"/><path d="M4.2 4.2l1.7 1.7"/><path d="M18.1 18.1l1.7 1.7"/><path d="M2.5 12h2.4"/><path d="M19.1 12h2.4"/><path d="M4.2 19.8l1.7-1.7"/><path d="M18.1 5.9l1.7-1.7"/></g>`,
+        partly: `<g ${A}><circle cx="8" cy="8" r="3"/><path d="M8 2.5v1.4"/><path d="M3.4 8H2"/><path d="M4.4 4.4l-1 -1"/><path d="M11.6 4.4l1 -1"/></g><path d="M17.5 20H9a3.5 3.5 0 0 1-.3-7 5 5 0 0 1 9.6 1.2A3 3 0 0 1 17.5 20z" ${A}/>`,
+        cloudy: `<path d="M17.5 19H7a4 4 0 0 1-.4-8 5.5 5.5 0 0 1 10.6 1.3A3.5 3.5 0 0 1 17.5 19z" ${A}/>`,
+        fog: `<path d="M16.5 13H7a3.5 3.5 0 0 1-.4-7 5 5 0 0 1 9.6 1.2A3 3 0 0 1 16.5 13z" ${A}/><g ${A}><path d="M4 17h16"/><path d="M6 20.5h12"/></g>`,
+        drizzle: `<path d="M16.5 13H7a3.5 3.5 0 0 1-.4-7 5 5 0 0 1 9.6 1.2A3 3 0 0 1 16.5 13z" ${A}/><g ${A}><path d="M9 17v1.5"/><path d="M13 17v1.5"/><path d="M11 20v1.5"/></g>`,
+        rain: `<path d="M16.5 12H7a3.5 3.5 0 0 1-.4-7 5 5 0 0 1 9.6 1.2A3 3 0 0 1 16.5 12z" ${A}/><g ${A}><path d="M8.5 15.5l-1 3"/><path d="M12.5 15.5l-1 3"/><path d="M16.5 15.5l-1 3"/></g>`,
+        snow: `<path d="M16.5 12H7a3.5 3.5 0 0 1-.4-7 5 5 0 0 1 9.6 1.2A3 3 0 0 1 16.5 12z" ${A}/><g ${A}><path d="M9 16.5v3"/><path d="M7.7 17.2l2.6 1.6"/><path d="M10.3 17.2l-2.6 1.6"/><path d="M15 16.5v3"/><path d="M13.7 17.2l2.6 1.6"/><path d="M16.3 17.2l-2.6 1.6"/></g>`,
+        thunder: `<path d="M16.5 12H7a3.5 3.5 0 0 1-.4-7 5 5 0 0 1 9.6 1.2A3 3 0 0 1 16.5 12z" ${A}/><path d="M12 14l-2.5 4H12l-1.5 3.5" ${A}/>`,
+        other: `<path d="M17.5 18H7a4 4 0 0 1-.4-8 5.5 5.5 0 0 1 10.6 1.3A3.5 3.5 0 0 1 17.5 18z" ${A}/>`,
+        pin: `<path d="M12 21s-6.5-5.5-6.5-10.5A6.5 6.5 0 0 1 12 4a6.5 6.5 0 0 1 6.5 6.5C18.5 15.5 12 21 12 21z" ${A}/><circle cx="12" cy="10.5" r="2.2" ${A}/>`,
+        drop: `<path d="M12 3s5 5.6 5 9.5a5 5 0 0 1-10 0C7 8.6 12 3 12 3z" ${A}/>`,
+      };
+
+      function svg(name, cls) {
+        const body = ICONS[name] || ICONS.other;
+        return `<svg viewBox="0 0 24 24" ${cls ? `class="${cls}"` : ""}>${body}</svg>`;
+      }
+
+      // WMO 天気コード → アイコン分類（9分類）
+      function wxIcon(code) {
+        if (code == null) return "other";
+        if (code === 0) return "clear";
+        if (code === 1 || code === 2) return "partly";
+        if (code === 3) return "cloudy";
+        if (code === 45 || code === 48) return "fog";
+        if ([51, 53, 55, 56, 57].includes(code)) return "drizzle";
+        if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return "rain";
+        if ([71, 73, 75, 77, 85, 86].includes(code)) return "snow";
+        if ([95, 96, 99].includes(code)) return "thunder";
+        return "other";
+      }
+
+      // ---------------------------------------------------------------------
+      // カレンダー色（label のハッシュで決定論的に割り当て）
+      // ---------------------------------------------------------------------
+      const PALETTE = [
+        "#e3b778", "#7fc8b6", "#c79be0", "#7fb0e6",
+        "#e69b8a", "#9fce86", "#6fccd1", "#dba6c4",
+      ];
+      function colorFor(label) {
+        let h = 0;
+        const s = label || "";
+        for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+        return PALETTE[h % PALETTE.length];
+      }
+
+      // ---------------------------------------------------------------------
+      // 時計（10秒ごと、ポーリングとは独立）
+      // ---------------------------------------------------------------------
+      const WD = ["日", "月", "火", "水", "木", "金", "土"];
+      function renderClock() {
+        const now = new Date();
+        const hh = String(now.getHours()).padStart(2, "0");
+        const mm = String(now.getMinutes()).padStart(2, "0");
+        document.getElementById("clock").innerHTML =
+          `${hh}<span class="colon">:</span>${mm}`;
+        document.getElementById("date").textContent =
+          `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${WD[now.getDay()]}曜日`;
+      }
+
+      // ---------------------------------------------------------------------
+      // データ描画
+      // ---------------------------------------------------------------------
+      function renderWeather(w) {
+        const el = document.getElementById("weather");
+        if (!w) {
+          el.innerHTML = "";
+          return;
+        }
+        const dayHtml = (d, label) => {
+          if (!d) return "";
+          const pop =
+            d.pop != null
+              ? `<span class="pop">${svg("drop")}${d.pop}%</span>`
+              : "";
+          return `
+            <div class="wx-day">
+              <span class="label">${label}</span>
+              ${svg(wxIcon(d.code))}
+              <span class="range">${d.max ?? "--"}°<span class="min"> / ${d.min ?? "--"}°</span></span>
+              ${pop}
+            </div>`;
+        };
+        const cur = w.current || {};
+        el.innerHTML = `
+          <div class="wx-now">
+            <span class="label">Now</span>
+            ${svg(wxIcon(cur.code))}
+            <span class="temp">${cur.temp != null ? cur.temp + "°" : "--"}</span>
+            <span class="place">${escapeHtml(w.locationName || "")}</span>
+          </div>
+          ${dayHtml(w.today, "Today")}
+          ${dayHtml(w.tomorrow, "Tomorrow")}`;
+      }
+
+      function renderLocation(location) {
+        const t = document.getElementById("locToday");
+        if (location && location.today) {
+          t.innerHTML = `${svg("pin")}<span>${escapeHtml(location.today)}</span>`;
+          t.classList.remove("hidden");
+        } else {
+          t.classList.add("hidden");
+        }
+        // 明日の勤務場所バッジ（通常ビューとタイムラインビューの両方）。
+        const tmHtml =
+          location && location.tomorrow
+            ? `${svg("pin")}<span>${escapeHtml(location.tomorrow)}</span>`
+            : null;
+        for (const id of ["locTomorrow", "locTomorrow2"]) {
+          const el = document.getElementById(id);
+          if (!el) continue;
+          if (tmHtml) {
+            el.innerHTML = tmHtml;
+            el.classList.remove("hidden");
+          } else {
+            el.classList.add("hidden");
+          }
+        }
+      }
+
+      // ---------------------------------------------------------------------
+      // タイムライン（タイムスケジュール）ビュー
+      // ---------------------------------------------------------------------
+      function toMin(hhmm) {
+        const [h, m] = String(hhmm).split(":").map(Number);
+        return h * 60 + m;
+      }
+
+      function renderTimeline(today, tomorrow) {
+        buildTimelineCol("tlToday", today, true);
+        buildTimelineCol("tlTomorrow", tomorrow, false);
+      }
+
+      function buildTimelineCol(id, events, showNow) {
+        const grid = document.getElementById(id);
+        if (!grid) return;
+        events = (events || []).filter((e) => e && e.t);
+        if (events.length === 0) {
+          grid.innerHTML = `<div class="tl-empty">予定はありません</div>`;
+          return;
+        }
+        const items = events.map((e) => ({
+          e,
+          s: toMin(e.t),
+          en: e.end ? toMin(e.end) : toMin(e.t) + 60,
+        }));
+        let minStart = Math.min(...items.map((x) => x.s));
+        let maxEnd = Math.max(...items.map((x) => x.en));
+        let rangeStart = Math.max(0, Math.floor(minStart / 60) * 60);
+        let rangeEnd = Math.min(24 * 60, Math.ceil(maxEnd / 60) * 60);
+        if (rangeEnd - rangeStart < 120) rangeEnd = rangeStart + 120; // 最低2時間幅
+        const span = rangeEnd - rangeStart;
+
+        // 重なり対応のレーン割当。
+        items.sort((a, b) => a.s - b.s || a.en - b.en);
+        const laneEnds = [];
+        for (const it of items) {
+          let placed = false;
+          for (let L = 0; L < laneEnds.length; L++) {
+            if (it.s >= laneEnds[L]) {
+              it.lane = L;
+              laneEnds[L] = it.en;
+              placed = true;
+              break;
+            }
+          }
+          if (!placed) {
+            it.lane = laneEnds.length;
+            laneEnds.push(it.en);
+          }
+        }
+        const lanes = Math.max(1, laneEnds.length);
+
+        let html = "";
+        for (let m = rangeStart; m <= rangeEnd; m += 60) {
+          const top = ((m - rangeStart) / span) * 100;
+          const hh = String(Math.floor(m / 60) % 24).padStart(2, "0");
+          html += `<div class="tl-hour" style="top:${top}%"><span>${hh}:00</span></div>`;
+        }
+        for (const it of items) {
+          const top = ((it.s - rangeStart) / span) * 100;
+          const h = ((it.en - it.s) / span) * 100;
+          const c = colorFor(it.e.calendar);
+          const w = 100 / lanes;
+          const left = it.lane * w;
+          const tlabel = it.e.end ? `${it.e.t}–${it.e.end}` : it.e.t;
+          html += `<div class="tl-event" style="top:${top}%; height:${h}%; left:calc(${left}% + 0.6vw); width:calc(${w}% - 1.2vw); --c:${c}">
+            <span class="t">${tlabel}</span><span class="ti">${escapeHtml(
+              it.e.title
+            )}</span></div>`;
+        }
+        if (showNow) {
+          const now = new Date();
+          const nowM = now.getHours() * 60 + now.getMinutes();
+          if (nowM >= rangeStart && nowM <= rangeEnd) {
+            const top = ((nowM - rangeStart) / span) * 100;
+            html += `<div class="tl-now" style="top:${top}%"></div>`;
+          }
+        }
+        grid.innerHTML = html;
+      }
+
+      // ---------------------------------------------------------------------
+      // 週・月カレンダービュー
+      // ---------------------------------------------------------------------
+      function dateKey(d) {
+        return (
+          d.getFullYear() +
+          "-" +
+          String(d.getMonth() + 1).padStart(2, "0") +
+          "-" +
+          String(d.getDate()).padStart(2, "0")
+        );
+      }
+      function addDays(d, n) {
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+      }
+
+      function evChip(e) {
+        const c = colorFor(e.calendar);
+        const label = e.allDay ? "終日" : e.t || "";
+        return `<li class="wk-ev" style="--c:${c}">
+          <span class="t">${label}</span>
+          <span class="ti">${escapeHtml(e.title)}</span>
+        </li>`;
+      }
+
+      function renderWeek(eventsByDate) {
+        const el = document.getElementById("calweek");
+        const ev = eventsByDate || {};
+        const today = new Date();
+        const todayKey = dateKey(today);
+        const weekStart = addDays(today, -today.getDay()); // 日曜始まり
+        const MAX = 6;
+        let html = "";
+        for (let i = 0; i < 7; i++) {
+          const d = addDays(weekStart, i);
+          const key = dateKey(d);
+          const list = ev[key] || [];
+          const cls =
+            (key === todayKey ? " today" : "") +
+            (i === 0 ? " sun" : "") +
+            (i === 6 ? " sat" : "");
+          const shown = list.slice(0, MAX).map(evChip).join("");
+          const more =
+            list.length > MAX
+              ? `<div class="wk-more">＋${list.length - MAX}件</div>`
+              : "";
+          html += `<div class="wk-col${cls}">
+            <span class="wk-dow">${WD[i]}</span>
+            <span class="wk-date">${d.getDate()}</span>
+            <ul class="wk-evs">${shown}</ul>
+            ${more}
+          </div>`;
+        }
+        el.innerHTML = html;
+      }
+
+      function renderMonth(eventsByDate) {
+        const ev = eventsByDate || {};
+        const today = new Date();
+        const todayKey = dateKey(today);
+        const month = today.getMonth();
+        document.getElementById("cmTitle").textContent =
+          `${today.getFullYear()}年 ${month + 1}月`;
+        document.getElementById("cmDow").innerHTML = WD.map(
+          (w, i) =>
+            `<span class="${i === 0 ? "sun" : i === 6 ? "sat" : ""}">${w}</span>`
+        ).join("");
+
+        const first = new Date(today.getFullYear(), month, 1);
+        const gridStart = addDays(first, -first.getDay());
+        const MAX = 3;
+        let html = "";
+        for (let i = 0; i < 42; i++) {
+          const d = addDays(gridStart, i);
+          const key = dateKey(d);
+          const dow = d.getDay();
+          const list = ev[key] || [];
+          const cls =
+            (d.getMonth() !== month ? " other" : "") +
+            (key === todayKey ? " today" : "");
+          const dnumCls = dow === 0 ? "sun" : dow === 6 ? "sat" : "";
+          const evs = list
+            .slice(0, MAX)
+            .map(
+              (e) =>
+                `<div class="cm-ev"><span class="dot" style="background:${colorFor(
+                  e.calendar
+                )}"></span>${escapeHtml(
+                  (e.allDay ? "" : (e.t ? e.t + " " : "")) + e.title
+                )}</div>`
+            )
+            .join("");
+          const more =
+            list.length > MAX
+              ? `<div class="cm-more">＋${list.length - MAX}件</div>`
+              : "";
+          html += `<div class="cm-cell${cls}">
+            <span class="d ${dnumCls}">${d.getDate()}</span>
+            ${evs}${more}
+          </div>`;
+        }
+        document.getElementById("cmGrid").innerHTML = html;
+      }
+
+      function renderChips(allDay) {
+        const el = document.getElementById("chips");
+        const items = allDay || [];
+        if (items.length === 0) {
+          el.innerHTML = "";
+          return;
+        }
+        el.innerHTML =
+          `<span class="chip-kicker">All-day</span>` +
+          items
+            .map(
+              (c) =>
+                `<span class="chip"><span class="dot" style="background:${colorFor(
+                  c.calendar
+                )};color:${colorFor(c.calendar)}"></span>${escapeHtml(
+                  c.label
+                )}</span>`
+            )
+            .join("");
+      }
+
+      function renderEvents(id, events) {
+        const el = document.getElementById(id);
+        if (!events || events.length === 0) {
+          el.innerHTML = `<li class="empty">予定はありません</li>`;
+          return;
+        }
+        el.innerHTML = events
+          .map((e) => {
+            const c = colorFor(e.calendar);
+            return `<li class="event">
+              <span class="time">${e.t}</span>
+              <span class="bar" style="background:${c};color:${c}"></span>
+              <span class="title">${escapeHtml(e.title)}</span>
+            </li>`;
+          })
+          .join("");
+      }
+
+      function escapeHtml(s) {
+        return String(s == null ? "" : s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c]
+        );
+      }
+
+      // 明るさ・表示モード・背景の反映（DESIGN.md §7.4–7.6）
+      let currentBg = null;
+      function renderDisplay(d) {
+        if (!d) return;
+        const op = Math.max(0, Math.min(1, (100 - (d.brightness ?? 100)) / 100));
+        document.getElementById("dimmer").style.opacity = String(op);
+        document.body.dataset.view = d.view || "full";
+        if (d.background !== currentBg) {
+          currentBg = d.background;
+          const photo = document.getElementById("photo");
+          if (!d.background) {
+            photo.classList.remove("shown"); // オーロラを見せる
+            return;
+          }
+          // 画像が実在するときだけ表示（404ならオーロラのまま）。
+          const img = new Image();
+          img.onload = () => {
+            if (currentBg !== d.background) return; // 競合回避
+            photo.style.backgroundImage = `url('${d.background}')`;
+            photo.classList.add("shown");
+          };
+          img.onerror = () => {
+            if (currentBg === d.background) photo.classList.remove("shown");
+          };
+          img.src = d.background;
+        }
+      }
+
+      function renderStale(syncedAt) {
+        const el = document.getElementById("stale");
+        if (!syncedAt) {
+          el.classList.remove("show");
+          return;
+        }
+        const age = (Date.now() - new Date(syncedAt).getTime()) / 1000;
+        if (age > 180) {
+          el.textContent = `最終更新 ${Math.round(age / 60)} 分前`;
+          el.classList.add("show");
+        } else {
+          el.classList.remove("show");
+        }
+      }
+
+      // ---------------------------------------------------------------------
+      // ポーリング（30秒）
+      // ---------------------------------------------------------------------
+      async function poll() {
+        try {
+          const res = await fetch("/api/data", { cache: "no-store" });
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const data = await res.json();
+          renderWeather(data.weather);
+          renderLocation(data.location);
+          renderChips(data.allDay);
+          renderEvents("todayList", data.today);
+          renderEvents("tomorrowList", data.tomorrow);
+          renderTimeline(data.today, data.tomorrow);
+          renderWeek(data.events);
+          renderMonth(data.events);
+          renderDisplay(data.display);
+          renderStale(data.syncedAt);
+        } catch (err) {
+          // 握りつぶし、次のポーリングで自動回復（DESIGN.md §6.7）。
+        }
+      }
+
+      renderClock();
+      poll();
+      setInterval(renderClock, 10 * 1000);
+      setInterval(poll, 30 * 1000);
+    </script>
+  </body>
+</html>

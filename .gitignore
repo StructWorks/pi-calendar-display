@@ -1,0 +1,22 @@
+# 個人の設定・認証情報・著作物（リポジトリに含めない。DESIGN.md §9）
+config.json
+.env
+token.json
+state.json
+public/bg*.jpg
+public/bg*.jpeg
+public/bg*.png
+public/bg*.webp
+
+# 依存
+node_modules/
+
+# 設計メモ（ローカル専用）
+.spec/**
+
+# テスト/作業用
+.playwright-mcp/
+
+# OS / エディタ
+.DS_Store
+*.log

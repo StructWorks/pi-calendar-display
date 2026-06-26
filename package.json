@@ -1,0 +1,19 @@
+{
+  "name": "pi-calendar-display",
+  "version": "0.1.0",
+  "description": "Always-on calendar & weather dashboard for Raspberry Pi, powered by Google Calendar and Open-Meteo.",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "googleapis": "^144.0.0"
+  }
+}
