@@ -34,6 +34,9 @@ const {
   withinWindow,
   localDateKey,
   monthEventOf,
+  parseTwelveQuote,
+  groupStocksByExchange,
+  sliceHourlyForecast,
 } = logic;
 
 const ROOT = __dirname;
@@ -101,6 +104,10 @@ function applyEnv(cfg) {
   if (E.WEATHER_LOCATION_NAME) cfg.weather.locationName = E.WEATHER_LOCATION_NAME;
   if (E.WEATHER_TIMEZONE) cfg.weather.timezone = E.WEATHER_TIMEZONE;
 
+  // 株価 API キーは .env（TWELVE_DATA_API_KEY）を優先。
+  cfg.stocks = cfg.stocks || {};
+  if (E.TWELVE_DATA_API_KEY) cfg.stocks.apiKey = E.TWELVE_DATA_API_KEY;
+
   cfg.server = cfg.server || {};
   if (E.PORT) cfg.server.port = Number(E.PORT);
 
@@ -136,6 +143,35 @@ const CAL_REFRESH_MS =
   ((config.server && config.server.calendarRefreshSeconds) || 60) * 1000;
 const WEATHER_REFRESH_MS =
   ((config.server && config.server.weatherRefreshSeconds) || 1800) * 1000;
+
+// 株価（portrait ビュー用。Twelve Data quote）。config.stocks で指定、最大8銘柄。
+const stocksCfg = config.stocks || {};
+const STOCK_REFRESH_MS = (stocksCfg.refreshSeconds || 300) * 1000;
+const STOCK_API_KEY = stocksCfg.apiKey || "";
+const STOCK_SYMBOLS = (Array.isArray(stocksCfg.symbols) ? stocksCfg.symbols : [])
+  .slice(0, 8)
+  .map((s) => {
+    const symbol = typeof s === "string" ? s : s && s.symbol;
+    const label =
+      (s && s.label) ||
+      String(symbol || "")
+        .replace(/^\^/, "")
+        .toUpperCase();
+    // 取引所の指定（日本株など）。mic_code / exchange / country のいずれか。
+    const exchange = (s && s.exchange) || "";
+    const mic = (s && (s.mic || s.mic_code)) || "";
+    const country = (s && s.country) || "";
+    return { symbol, label, exchange, mic, country };
+  })
+  .filter((s) => s.symbol);
+const STOCKS_ENABLED =
+  stocksCfg.enabled !== false && STOCK_SYMBOLS.length > 0 && !!STOCK_API_KEY;
+if (stocksCfg.enabled !== false && STOCK_SYMBOLS.length > 0 && !STOCK_API_KEY) {
+  console.warn(
+    "[stocks] Twelve Data の API キーが未設定です（stocks.apiKey / TWELVE_DATA_API_KEY）。株価は無効化されます。"
+  );
+}
+
 const remoteCfg = config.remote || {};
 const REMOTE_ENABLED = remoteCfg.enabled !== false;
 const UPLOAD_MAX_BYTES = 12 * 1024 * 1024; // 12MB
@@ -204,6 +240,7 @@ const cache = {
   location: { today: null, tomorrow: null },
   events: {}, // 月/週ビュー用。"YYYY-MM-DD" → [{ t?, end?, title, calendar, allDay? }]
   weather: null,
+  stocks: [], // portrait ビュー用。[{ sym, price, chg }]
   display: {
     brightness: 100,
     brightnessOverride: null,
@@ -290,7 +327,8 @@ async function fetchWeather() {
     "https://api.open-meteo.com/v1/forecast" +
     `?latitude=${encodeURIComponent(w.latitude)}` +
     `&longitude=${encodeURIComponent(w.longitude)}` +
-    "&current=temperature_2m,weather_code" +
+    "&current=temperature_2m,apparent_temperature,weather_code" +
+    "&hourly=temperature_2m,precipitation_probability" +
     "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
     `&timezone=${encodeURIComponent(w.timezone)}` +
     "&forecast_days=2";
@@ -308,19 +346,85 @@ async function fetchWeather() {
       pop: roundOrNull(pick(daily.precipitation_probability_max, i)),
     });
 
+    // 現在時刻以降12時間の気温・降水確率（portrait のストリップ用）。
+    const hourly = data.hourly || {};
+    const strip =
+      sliceHourlyForecast(
+        hourly.time,
+        hourly.temperature_2m,
+        hourly.precipitation_probability,
+        new Date(),
+        12
+      ) || { temp: [], pop: [] };
+
     cache.weather = {
       current: {
         temp: roundOrNull(data.current && data.current.temperature_2m),
+        feels: roundOrNull(data.current && data.current.apparent_temperature),
         code: data.current && data.current.weather_code,
       },
       today: day(0),
       tomorrow: day(1),
+      hourly: strip.temp,
+      pop: strip.pop,
       locationName: w.locationName,
     };
   } catch (err) {
     // 失敗時は前回値を保持（DESIGN.md §6.7）。
     console.error("[weather] 取得失敗:", err.message);
   }
+}
+
+// ---------------------------------------------------------------------------
+// 株価取得（Twelve Data quote。portrait ビュー用）。全銘柄を1リクエストでバッチ取得。
+// ---------------------------------------------------------------------------
+
+// 銘柄ごとの最終取得値。個別銘柄が一時的に失敗しても前回値を保つ。
+const lastStock = {};
+
+// 1取引所グループ（同一 exchange/mic/country）を1リクエストで取得する。
+async function fetchStockGroup(group) {
+  const symbols = group.items.map((s) => s.symbol).join(",");
+  let url =
+    "https://api.twelvedata.com/quote" +
+    `?symbol=${encodeURIComponent(symbols)}` +
+    `&apikey=${encodeURIComponent(STOCK_API_KEY)}&dp=2`;
+  if (group.exchange) url += `&exchange=${encodeURIComponent(group.exchange)}`;
+  if (group.mic) url += `&mic_code=${encodeURIComponent(group.mic)}`;
+  if (group.country) url += `&country=${encodeURIComponent(group.country)}`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    // レスポンス全体のエラー（不正キー・レート超過・プラン外など）。
+    if (data && data.status === "error") {
+      throw new Error(data.message || "API エラー");
+    }
+    // 複数銘柄は symbol をキーにした連想配列、単一銘柄は quote を直接返す。
+    for (const { symbol, label } of group.items) {
+      const q = group.items.length === 1 ? data : data[symbol];
+      const parsed = parseTwelveQuote(q);
+      if (parsed) {
+        lastStock[label] = { sym: label, price: parsed.price, chg: parsed.chg };
+      } else {
+        console.error(`[stocks] "${symbol}" のクォート取得に失敗`);
+      }
+    }
+  } catch (err) {
+    console.error(`[stocks] グループ取得失敗 (${symbols}):`, err.message);
+  }
+}
+
+async function fetchStocks() {
+  if (!STOCKS_ENABLED) return;
+  // 取引所ごとにグループ化して並列取得（バッチは取引所指定が全銘柄共通のため）。
+  const groups = groupStocksByExchange(STOCK_SYMBOLS);
+  await Promise.all(groups.map((g) => fetchStockGroup(g)));
+
+  // config の並び順で、取得済みのものだけを並べる。
+  cache.stocks = STOCK_SYMBOLS.map(({ label }) => lastStock[label]).filter(
+    Boolean
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -349,6 +453,27 @@ function seedDemoData() {
     { label: "資源ごみ", calendar: "プライベート" },
   ];
   cache.location = { today: "在宅勤務", tomorrow: "出社" };
+
+  // portrait 用の天気（現在＋今日/明日＋これからの12時間）。
+  cache.weather = {
+    current: { temp: 24, feels: 26, code: 2 },
+    today: { code: 1, max: 27, min: 19, pop: 20 },
+    tomorrow: { code: 63, max: 23, min: 17, pop: 70 },
+    hourly: [24, 25, 26, 27, 27, 26, 24, 22, 21, 20, 20, 19],
+    pop: [10, 10, 20, 20, 30, 40, 60, 70, 65, 50, 40, 30],
+    locationName: (config.weather && config.weather.locationName) || "東京",
+  };
+  // portrait 用の株価（最大8）。
+  cache.stocks = [
+    { sym: "AAPL", price: 232.15, chg: 1.24 },
+    { sym: "MSFT", price: 498.3, chg: -0.42 },
+    { sym: "NVDA", price: 178.6, chg: 2.85 },
+    { sym: "GOOGL", price: 201.44, chg: 0.63 },
+    { sym: "AMZN", price: 224.9, chg: -1.08 },
+    { sym: "トヨタ", price: 2985, chg: -1.1 },
+    { sym: "SBG", price: 11230, chg: 3.05 },
+    { sym: "日経225", price: 41250, chg: 0.85 },
+  ];
 
   // 月/週ビュー用のサンプル（実日付基準で散らす）。
   const now = new Date();
@@ -666,16 +791,27 @@ function handleCommand(action, value) {
 // ---------------------------------------------------------------------------
 
 async function runSync() {
-  await Promise.all([fetchCalendars(), maybeFetchWeather()]);
+  await Promise.all([fetchCalendars(), maybeFetchWeather(), maybeFetchStocks()]);
   cache.syncedAt = new Date().toISOString();
 }
 
 let lastWeatherAt = 0;
 async function maybeFetchWeather() {
+  if (DEMO) return; // デモ中は seedDemoData の値を保持
   const now = Date.now();
   if (now - lastWeatherAt >= WEATHER_REFRESH_MS || cache.weather == null) {
     lastWeatherAt = now;
     await fetchWeather();
+  }
+}
+
+let lastStocksAt = 0;
+async function maybeFetchStocks() {
+  if (DEMO || !STOCKS_ENABLED) return;
+  const now = Date.now();
+  if (now - lastStocksAt >= STOCK_REFRESH_MS || cache.stocks.length === 0) {
+    lastStocksAt = now;
+    await fetchStocks();
   }
 }
 
@@ -831,6 +967,11 @@ app.get("/oauth2callback", async (req, res) => {
 app.get("/remote", (req, res) => {
   if (!REMOTE_ENABLED) return res.status(404).send("remote disabled");
   res.sendFile(path.join(PUBLIC_DIR, "remote.html"));
+});
+
+// /portrait は24インチ縦置き用のダッシュボード（時計・天気・予定・ミニ暦・株価）。
+app.get("/portrait", (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, "portrait.html"));
 });
 
 app.use(express.static(PUBLIC_DIR));
