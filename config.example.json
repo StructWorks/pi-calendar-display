@@ -19,6 +19,18 @@
     "locationName": "Tokyo",
     "timezone": "Asia/Tokyo"
   },
+  "_stocks_comment": "Optional: powers the /portrait dashboard ticker via Twelve Data (twelvedata.com). Get a free API key and put it in .env as TWELVE_DATA_API_KEY (preferred) or in apiKey below. Max 8 symbols. For non-US markets add mic (mic_code) or exchange/country per symbol; symbols are grouped by market and fetched one request per market. Japan (Tokyo) = 4-digit code + mic XJPX (e.g. 7203 = Toyota) and usually needs a paid plan. label is the on-screen name; chg is percent change vs previous close.",
+  "stocks": {
+    "enabled": true,
+    "refreshSeconds": 300,
+    "apiKey": "",
+    "symbols": [
+      { "symbol": "7203", "mic": "XJPX", "label": "トヨタ" },
+      { "symbol": "9984", "mic": "XJPX", "label": "SBG" },
+      { "symbol": "AAPL", "label": "AAPL" },
+      { "symbol": "NVDA", "label": "NVDA" }
+    ]
+  },
   "server": {
     "port": 3000,
     "calendarRefreshSeconds": 60,

@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Calendar Display · Portrait</title>
+    <style>
+      :root {
+        --ink: #f2ede3;
+        --ink-dim: rgba(242, 237, 227, 0.58);
+        --ink-faint: rgba(242, 237, 227, 0.34);
+        --gold: #e3b778;
+        --line: rgba(242, 237, 227, 0.12);
+        --glass: rgba(255, 255, 255, 0.045);
+        --glass-2: rgba(255, 255, 255, 0.07);
+        --rain: #9fcdf0;
+        --radius: 22px;
+        --sans: -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP",
+          "Segoe UI", Roboto, sans-serif;
+        --num: tabular-nums;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { height: 100%; overflow: hidden; }
+
+      body {
+        font-family: var(--sans);
+        color: var(--ink);
+        background-color: #0a0d12;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      /* 実機（24インチ縦置き＝1080×1920）では全画面。cqh/cqw は stage 基準。 */
+      .stage {
+        position: fixed;
+        inset: 0;
+        container-type: size;
+        overflow: hidden;
+        background-color: #0a0d12;
+      }
+
+      /* ---------- 背景レイヤー ---------- */
+      .aurora {
+        position: absolute;
+        inset: -20%;
+        z-index: 0;
+        filter: blur(52px) saturate(135%);
+        background:
+          radial-gradient(40% 40% at 18% 12%, rgba(64, 168, 158, 0.6), transparent 70%),
+          radial-gradient(44% 42% at 82% 20%, rgba(112, 90, 196, 0.55), transparent 72%),
+          radial-gradient(48% 44% at 70% 92%, rgba(228, 160, 96, 0.5), transparent 70%),
+          radial-gradient(52% 48% at 24% 82%, rgba(44, 108, 136, 0.5), transparent 74%);
+        animation: drift 38s ease-in-out infinite alternate;
+      }
+      @keyframes drift {
+        0% { transform: translate3d(-3%, -2%, 0) scale(1.05) rotate(0deg); }
+        50% { transform: translate3d(4%, 3%, 0) scale(1.12) rotate(4deg); }
+        100% { transform: translate3d(-2%, 4%, 0) scale(1.08) rotate(-3deg); }
+      }
+      .scrim {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        background:
+          radial-gradient(120% 70% at 50% 0%, rgba(8, 10, 14, 0.25), transparent 55%),
+          linear-gradient(180deg, rgba(8, 10, 14, 0.5) 0%, rgba(8, 10, 14, 0.22) 40%, rgba(8, 10, 14, 0.6) 100%);
+      }
+      .grain {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        pointer-events: none;
+        opacity: 0.05;
+        mix-blend-mode: overlay;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      }
+
+      /* ---------- 明るさ暗幕 ---------- */
+      .dimmer {
+        position: absolute;
+        inset: 0;
+        z-index: 50;
+        background: #05070a;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 2.2s ease;
+      }
+
+      /* ===================== レイアウト ===================== */
+      .app {
+        position: relative;
+        z-index: 3;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        padding: 3.5cqh 4.5cqw;
+        gap: 2cqh;
+      }
+      .app > * {
+        opacity: 0;
+        transform: translateY(1.4cqh);
+        animation: rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      }
+      .app > *:nth-child(1) { animation-delay: 0.05s; }
+      .app > *:nth-child(2) { animation-delay: 0.14s; }
+      .app > *:nth-child(3) { animation-delay: 0.24s; }
+      @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+      .kicker {
+        font-size: 0.95cqh;
+        font-weight: 600;
+        letter-spacing: 0.32em;
+        text-transform: uppercase;
+        color: var(--gold);
+        opacity: 0.85;
+      }
+
+      /* ---------- 上部2列グリッド（左:時計/暦　右:天気/これからの天気） ---------- */
+      .top {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.8cqh 2cqw;
+        align-items: start;
+      }
+      .clockblock { align-self: center; }
+      .minical, .strip { align-self: stretch; }
+      .clock {
+        font-weight: 700;
+        font-size: 6.5cqh;
+        line-height: 0.82;
+        letter-spacing: -0.02em;
+        font-variant-numeric: var(--num);
+        text-shadow: 0 0.4cqh 5cqh rgba(227, 183, 120, 0.18);
+      }
+      .clock .colon {
+        color: var(--gold);
+        margin: 0 0.4cqw;
+        animation: pulse 4s ease-in-out infinite;
+      }
+      @keyframes pulse { 0%,100%{opacity:0.9;} 50%{opacity:0.45;} }
+      .date {
+        font-weight: 500;
+        font-size: 1.5cqh;
+        margin-top: 0.9cqh;
+        color: var(--ink-dim);
+        letter-spacing: 0.04em;
+      }
+
+      /* ---------- 天気（右列に3枚を均等配置） ---------- */
+      .weather {
+        display: flex;
+        gap: 1cqw;
+        align-self: center;
+      }
+      .wx {
+        flex: 1;
+        min-width: 0;
+        background: var(--glass);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 1.1cqh 0.8cqw;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.3cqh;
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+      }
+      .wx.now { background: var(--glass-2); }
+      .wx .label {
+        font-size: 0.95cqh;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--gold);
+        opacity: 0.9;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .wx.next .label { color: var(--ink-faint); }
+      .wx svg { width: 2.5cqh; height: 2.5cqh; stroke-width: 1.6; color: var(--ink); }
+      .wx .temp {
+        font-weight: 600;
+        font-size: 2.2cqh;
+        line-height: 0.95;
+        font-variant-numeric: var(--num);
+      }
+      .wx .range { font-size: 1.4cqh; font-weight: 600; font-variant-numeric: var(--num); }
+      .wx .range .min { color: var(--ink-dim); font-weight: 400; }
+      .wx .sub {
+        font-size: 0.95cqh;
+        color: var(--ink-dim);
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4cqw;
+      }
+      .wx .sub svg { width: 1.3cqh; height: 1.3cqh; color: var(--rain); }
+      .wx .sub.pop { color: var(--rain); }
+
+      /* ---------- 天気ストリップ（気温 + 降水） ---------- */
+      .strip {
+        background: var(--glass);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 1.6cqh 1.6cqw 1.2cqh;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+      }
+      .strip .head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 0.8cqh;
+      }
+      .strip .head .legend {
+        font-size: 0.95cqh;
+        color: var(--ink-faint);
+        display: inline-flex;
+        gap: 1.2cqw;
+      }
+      .strip .head .legend b { color: var(--rain); font-weight: 600; }
+      .strip svg { display: block; width: 100%; height: 8.5cqh; }
+      .strip .hours { display: flex; margin-top: 0.3cqh; }
+      .strip .hours span {
+        flex: 1;
+        text-align: center;
+        font-size: 0.9cqh;
+        color: var(--ink-faint);
+        font-variant-numeric: var(--num);
+      }
+
+      /* ---------- ミニ月間カレンダー（背景なし） ---------- */
+      .minical {
+        padding: 0.4cqh 0.6cqw;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5cqh;
+        overflow: hidden;
+      }
+      .mc-title {
+        display: flex;
+        align-items: baseline;
+        gap: 0.8cqw;
+        padding-left: 2.5cqw; /* 中央寄せセルの1列目に合わせる */
+      }
+      .mc-title .m { font-size: 1.3cqh; font-weight: 700; font-variant-numeric: var(--num); }
+      .mc-title .en {
+        font-size: 0.8cqh;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--gold);
+      }
+      .mc-dow { display: grid; grid-template-columns: repeat(7, 1fr); }
+      .mc-dow span {
+        text-align: center;
+        font-size: 0.8cqh;
+        color: var(--ink-faint);
+        letter-spacing: 0.02em;
+      }
+      .mc-dow span.sun { color: #e69b8a; }
+      .mc-dow span.sat { color: #8fb8e6; }
+      .mc-grid {
+        flex: 1;
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        grid-auto-rows: 1fr;
+        gap: 0.15cqh 0.1cqw;
+        min-height: 0;
+      }
+      .mc-cell {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.05cqh;
+        font-variant-numeric: var(--num);
+        color: var(--ink);
+        border-radius: 6px;
+      }
+      .mc-cell.other { color: var(--ink-faint); opacity: 0.45; }
+      .mc-cell.sun:not(.today) { color: #e69b8a; }
+      .mc-cell.sat:not(.today) { color: #8fb8e6; }
+      .mc-cell.today {
+        background: var(--gold);
+        color: #0a0d12;
+        font-weight: 700;
+      }
+
+      /* ---------- 今日・明日の予定（横2カラム） ---------- */
+      .cols {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.6cqw;
+        min-height: 0;
+      }
+      .col {
+        position: relative;
+        background: var(--glass);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 2.2cqh 1.6cqw;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        box-shadow: 0 1.6cqh 4cqh rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255,255,255,0.05);
+      }
+      .col-head {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4cqh;
+        margin-bottom: 1.6cqh;
+        padding-bottom: 1.2cqh;
+        border-bottom: 1px solid var(--line);
+      }
+      .col-head h2 { font-size: 1.7cqh; font-weight: 700; line-height: 1; }
+      .events {
+        list-style: none;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .event {
+        display: flex;
+        align-items: baseline;
+        gap: 1cqw;
+        padding: 1.1cqh 0;
+        border-bottom: 1px solid rgba(242, 237, 227, 0.06);
+      }
+      .event:last-child { border-bottom: none; }
+      .event.past { opacity: 0.4; }
+      .event .time {
+        font-size: 1.25cqh;
+        font-weight: 600;
+        font-variant-numeric: var(--num);
+        color: var(--ink);
+        flex: none;
+        min-width: 8cqw;
+      }
+      .event .bar {
+        width: 3px;
+        align-self: stretch;
+        border-radius: 999px;
+        flex: none;
+        box-shadow: 0 0 8px currentColor;
+      }
+      .event .title {
+        font-size: 1.35cqh;
+        font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: rgba(242, 237, 227, 0.92);
+      }
+      .event .allday {
+        font-size: 1.05cqh;
+        color: var(--gold);
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        flex: none;
+        min-width: 8cqw;
+      }
+      .empty {
+        color: var(--ink-faint);
+        font-size: 1.3cqh;
+        margin-top: 1cqh;
+      }
+
+      /* ---------- 株価ティッカー（最下段） ---------- */
+      .ticker {
+        flex: none;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1.6cqh 1cqw;
+        background: var(--glass);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 2cqh 1.6cqw;
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        box-shadow: 0 1.6cqh 4cqh rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255,255,255,0.05);
+      }
+      .tk {
+        min-width: 0;
+        padding-left: 1cqw;
+        border-left: 3px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        gap: 0.5cqh;
+      }
+      .tk.up { border-left-color: rgba(159, 206, 134, 0.55); }
+      .tk.down { border-left-color: rgba(230, 155, 138, 0.55); }
+      .tk .sym {
+        font-size: 1.1cqh;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        color: var(--ink-dim);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .tk .px {
+        font-size: 1.5cqh;
+        font-weight: 700;
+        font-variant-numeric: var(--num);
+        line-height: 1;
+        white-space: nowrap;
+      }
+      .tk .chg {
+        font-size: 1.1cqh;
+        font-weight: 600;
+        font-variant-numeric: var(--num);
+        white-space: nowrap;
+      }
+      .tk.up .chg { color: #9fce86; }
+      .tk.down .chg { color: #e69b8a; }
+
+      /* ---------- 最終更新の注意表示 ---------- */
+      .stale {
+        position: absolute;
+        bottom: 1.4cqh;
+        right: 2cqw;
+        z-index: 4;
+        font-size: 0.9cqh;
+        color: var(--ink-faint);
+        display: none;
+      }
+      .stale.show { display: block; }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <div class="aurora"></div>
+      <div class="scrim"></div>
+      <div class="grain"></div>
+      <div class="dimmer" id="dimmer"></div>
+
+      <div class="app">
+        <div class="top">
+          <div class="clockblock">
+            <div class="clock" id="clock">--<span class="colon">:</span>--</div>
+            <div class="date" id="date"></div>
+          </div>
+          <div class="weather" id="weather"></div>
+
+          <div class="minical" id="minical"></div>
+
+          <div class="strip">
+            <div class="head">
+              <span class="kicker">これからの天気</span>
+              <span class="legend"><span>気温</span><b>■ 降水</b></span>
+            </div>
+            <svg id="stripSvg" viewBox="0 0 480 100" preserveAspectRatio="none"></svg>
+            <div class="hours" id="stripHours"></div>
+          </div>
+        </div>
+
+        <div class="cols">
+          <section class="col">
+            <div class="col-head">
+              <span class="kicker">Today</span>
+              <h2>今日</h2>
+            </div>
+            <ul class="events" id="todayList"></ul>
+          </section>
+          <section class="col">
+            <div class="col-head">
+              <span class="kicker">Tomorrow</span>
+              <h2>明日</h2>
+            </div>
+            <ul class="events" id="tomorrowList"></ul>
+          </section>
+        </div>
+
+        <div class="ticker" id="ticker"></div>
+      </div>
+
+      <div class="stale" id="stale"></div>
+    </div>
+
+    <script>
+      "use strict";
+
+      // ===================== アイコン =====================
+      const A =
+        'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+      const ICONS = {
+        clear: `<circle cx="12" cy="12" r="4.2" ${A}/><g ${A}><path d="M12 2.5v2.4"/><path d="M12 19.1v2.4"/><path d="M4.2 4.2l1.7 1.7"/><path d="M18.1 18.1l1.7 1.7"/><path d="M2.5 12h2.4"/><path d="M19.1 12h2.4"/><path d="M4.2 19.8l1.7-1.7"/><path d="M18.1 5.9l1.7-1.7"/></g>`,
+        partly: `<g ${A}><circle cx="8" cy="8" r="3"/><path d="M8 2.5v1.4"/><path d="M3.4 8H2"/><path d="M4.4 4.4l-1 -1"/><path d="M11.6 4.4l1 -1"/></g><path d="M17.5 20H9a3.5 3.5 0 0 1-.3-7 5 5 0 0 1 9.6 1.2A3 3 0 0 1 17.5 20z" ${A}/>`,
+        cloudy: `<path d="M17.5 19H7a4 4 0 0 1-.4-8 5.5 5.5 0 0 1 10.6 1.3A3.5 3.5 0 0 1 17.5 19z" ${A}/>`,
+        fog: `<path d="M16.5 13H7a3.5 3.5 0 0 1-.4-7 5 5 0 0 1 9.6 1.2A3 3 0 0 1 16.5 13z" ${A}/><g ${A}><path d="M4 17h16"/><path d="M6 20.5h12"/></g>`,
+        drizzle: `<path d="M16.5 13H7a3.5 3.5 0 0 1-.4-7 5 5 0 0 1 9.6 1.2A3 3 0 0 1 16.5 13z" ${A}/><g ${A}><path d="M9 17v1.5"/><path d="M13 17v1.5"/><path d="M11 20v1.5"/></g>`,
+        rain: `<path d="M16.5 12H7a3.5 3.5 0 0 1-.4-7 5 5 0 0 1 9.6 1.2A3 3 0 0 1 16.5 12z" ${A}/><g ${A}><path d="M8.5 15.5l-1 3"/><path d="M12.5 15.5l-1 3"/><path d="M16.5 15.5l-1 3"/></g>`,
+        snow: `<path d="M16.5 12H7a3.5 3.5 0 0 1-.4-7 5 5 0 0 1 9.6 1.2A3 3 0 0 1 16.5 12z" ${A}/><g ${A}><path d="M9 16.5v3"/><path d="M7.7 17.2l2.6 1.6"/><path d="M10.3 17.2l-2.6 1.6"/><path d="M15 16.5v3"/><path d="M13.7 17.2l2.6 1.6"/><path d="M16.3 17.2l-2.6 1.6"/></g>`,
+        thunder: `<path d="M16.5 12H7a3.5 3.5 0 0 1-.4-7 5 5 0 0 1 9.6 1.2A3 3 0 0 1 16.5 12z" ${A}/><path d="M12 14l-2.5 4H12l-1.5 3.5" ${A}/>`,
+        other: `<path d="M17.5 18H7a4 4 0 0 1-.4-8 5.5 5.5 0 0 1 10.6 1.3A3.5 3.5 0 0 1 17.5 18z" ${A}/>`,
+        drop: `<path d="M12 3s5 5.6 5 9.5a5 5 0 0 1-10 0C7 8.6 12 3 12 3z" ${A}/>`,
+      };
+      function svg(name, cls) {
+        const body = ICONS[name] || ICONS.other;
+        return `<svg viewBox="0 0 24 24" ${cls ? `class="${cls}"` : ""}>${body}</svg>`;
+      }
+      function wxIcon(code) {
+        if (code == null) return "other";
+        if (code === 0) return "clear";
+        if (code === 1 || code === 2) return "partly";
+        if (code === 3) return "cloudy";
+        if (code === 45 || code === 48) return "fog";
+        if ([51, 53, 55, 56, 57].includes(code)) return "drizzle";
+        if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return "rain";
+        if ([71, 73, 75, 77, 85, 86].includes(code)) return "snow";
+        if ([95, 96, 99].includes(code)) return "thunder";
+        return "other";
+      }
+
+      const PALETTE = ["#e3b778","#7fc8b6","#c79be0","#7fb0e6","#e69b8a","#9fce86","#6fccd1","#dba6c4"];
+      function colorFor(label) {
+        let h = 0; const s = label || "";
+        for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+        return PALETTE[h % PALETTE.length];
+      }
+      function escapeHtml(s) {
+        return String(s == null ? "" : s).replace(/[&<>"']/g,
+          (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+      }
+      function toMin(hhmm) { const [h, m] = String(hhmm).split(":").map(Number); return h * 60 + m; }
+
+      // ===================== 時計 =====================
+      const WD = ["日", "月", "火", "水", "木", "金", "土"];
+      function renderClock() {
+        const now = new Date();
+        const hh = String(now.getHours()).padStart(2, "0");
+        const mm = String(now.getMinutes()).padStart(2, "0");
+        document.getElementById("clock").innerHTML = `${hh}<span class="colon">:</span>${mm}`;
+        document.getElementById("date").textContent =
+          `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${WD[now.getDay()]}曜日`;
+      }
+
+      // ===================== 天気ロウ =====================
+      function renderWeather(w) {
+        const el = document.getElementById("weather");
+        if (!w) { el.innerHTML = ""; return; }
+        const cur = w.current || {};
+        const day = (d, label, cls) => {
+          if (!d) return "";
+          return `
+            <div class="wx ${cls}">
+              <span class="label">${label}</span>
+              ${svg(wxIcon(d.code))}
+              <span class="range">${d.max ?? "--"}°<span class="min"> / ${d.min ?? "--"}°</span></span>
+              <span class="sub pop">${svg("drop")}${d.pop ?? "--"}%</span>
+            </div>`;
+        };
+        const feels = cur.feels != null ? `体感 ${cur.feels}°` : "";
+        el.innerHTML = `
+          <div class="wx now">
+            <span class="label">Now · ${escapeHtml(w.locationName || "")}</span>
+            ${svg(wxIcon(cur.code))}
+            <span class="temp">${cur.temp != null ? cur.temp + "°" : "--"}</span>
+            <span class="sub">${feels}</span>
+          </div>
+          ${day(w.today, "今日", "")}
+          ${day(w.tomorrow, "明日", "next")}`;
+      }
+
+      // ===================== 天気ストリップ =====================
+      function renderStrip(w) {
+        const svgEl = document.getElementById("stripSvg");
+        const hoursEl = document.getElementById("stripHours");
+        const temps = (w && w.hourly) || [];
+        const pops = (w && w.pop) || [];
+        if (temps.length < 2) { svgEl.innerHTML = ""; hoursEl.innerHTML = ""; return; }
+        const N = temps.length;
+        const W = 480;
+        const stepX = W / (N - 1);
+        const tMin = Math.min(...temps) - 1, tMax = Math.max(...temps) + 1;
+        const span = tMax - tMin || 1;
+        const yFor = (t) => 78 - ((t - tMin) / span) * 60;
+
+        let bars = "";
+        const bw = stepX * 0.5;
+        for (let i = 0; i < N; i++) {
+          const x = i * stepX;
+          const h = ((pops[i] || 0) / 100) * 74;
+          bars += `<rect x="${(x - bw / 2).toFixed(1)}" y="${(96 - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="var(--rain)" opacity="0.28"/>`;
+        }
+        const pts = temps.map((t, i) => `${(i * stepX).toFixed(1)},${yFor(t).toFixed(1)}`);
+        const area = `M0,96 L${pts.map((p) => "L" + p).join(" ").slice(1)} L${W},96 Z`;
+        const line = `M${pts.join(" L")}`;
+        let labels = "";
+        for (let i = 0; i < N; i += 2) {
+          const x = i * stepX;
+          labels += `<text x="${x.toFixed(1)}" y="${(yFor(temps[i]) - 5).toFixed(1)}" fill="var(--ink)" font-size="8" text-anchor="middle" style="font-variant-numeric:tabular-nums">${temps[i]}°</text>`;
+        }
+        let dots = "";
+        for (let i = 0; i < N; i += 2) {
+          dots += `<circle cx="${(i * stepX).toFixed(1)}" cy="${yFor(temps[i]).toFixed(1)}" r="2.2" fill="var(--gold)"/>`;
+        }
+
+        svgEl.innerHTML = `
+          <defs>
+            <linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="var(--gold)" stop-opacity="0.28"/>
+              <stop offset="1" stop-color="var(--gold)" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          ${bars}
+          <path d="${area}" fill="url(#tg)"/>
+          <path d="${line}" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+          ${dots}${labels}`;
+
+        const base = new Date().getHours();
+        let hours = "";
+        for (let i = 0; i < N; i++) {
+          const h = (base + i) % 24;
+          hours += `<span>${i === 0 ? "今" : String(h).padStart(2, "0")}</span>`;
+        }
+        hoursEl.innerHTML = hours;
+      }
+
+      // ===================== 予定リスト（今日 / 明日） =====================
+      function renderEvents(id, events, markPast) {
+        const el = document.getElementById(id);
+        if (!events || events.length === 0) {
+          el.innerHTML = `<li class="empty">予定はありません</li>`;
+          return;
+        }
+        const now = new Date();
+        const nowM = now.getHours() * 60 + now.getMinutes();
+        el.innerHTML = events
+          .map((e) => {
+            const c = colorFor(e.calendar);
+            if (e.allDay) {
+              return `<li class="event">
+                <span class="allday">終日</span>
+                <span class="bar" style="background:${c};color:${c}"></span>
+                <span class="title">${escapeHtml(e.title)}</span>
+              </li>`;
+            }
+            const en = e.end ? toMin(e.end) : toMin(e.t) + 60;
+            const past = markPast && en <= nowM;
+            return `<li class="event${past ? " past" : ""}">
+              <span class="time">${e.t}</span>
+              <span class="bar" style="background:${c};color:${c}"></span>
+              <span class="title">${escapeHtml(e.title)}</span>
+            </li>`;
+          })
+          .join("");
+      }
+
+      // ===================== ミニ月間カレンダー =====================
+      function addDays(d, n) {
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+      }
+      function renderMiniCal() {
+        const el = document.getElementById("minical");
+        const now = new Date();
+        const y = now.getFullYear(), m = now.getMonth(), todayD = now.getDate();
+
+        const first = new Date(y, m, 1);
+        const gridStart = addDays(first, -first.getDay()); // 日曜始まり
+        const dow = WD.map(
+          (w, i) => `<span class="${i === 0 ? "sun" : i === 6 ? "sat" : ""}">${w}</span>`
+        ).join("");
+
+        let cells = "";
+        for (let i = 0; i < 42; i++) {
+          const d = addDays(gridStart, i);
+          const inMonth = d.getMonth() === m;
+          const wd = d.getDay();
+          const isToday = inMonth && d.getDate() === todayD;
+          const cls =
+            (inMonth ? "" : " other") +
+            (isToday ? " today" : "") +
+            (wd === 0 ? " sun" : wd === 6 ? " sat" : "");
+          cells += `<div class="mc-cell${cls}">${d.getDate()}</div>`;
+        }
+
+        el.innerHTML = `
+          <div class="mc-title">
+            <span class="m">${m + 1}月</span>
+            <span class="en">${y}</span>
+          </div>
+          <div class="mc-dow">${dow}</div>
+          <div class="mc-grid">${cells}</div>`;
+      }
+
+      // ===================== 株価ティッカー =====================
+      function fmtPrice(p) {
+        return p >= 1000
+          ? p.toLocaleString("ja-JP", { maximumFractionDigits: 0 })
+          : p.toFixed(2);
+      }
+      function renderStocks(stocks) {
+        const el = document.getElementById("ticker");
+        const items = (stocks || []).slice(0, 8);
+        if (items.length === 0) { el.style.display = "none"; return; }
+        el.style.display = "grid";
+        el.innerHTML = items
+          .map((s) => {
+            const up = s.chg >= 0;
+            const arrow = up ? "▲" : "▼";
+            const sign = up ? "+" : "";
+            return `<div class="tk ${up ? "up" : "down"}">
+              <span class="sym">${escapeHtml(s.sym)}</span>
+              <span class="px">${fmtPrice(s.price)}</span>
+              <span class="chg">${arrow} ${sign}${s.chg.toFixed(2)}%</span>
+            </div>`;
+          })
+          .join("");
+      }
+
+      // ===================== 明るさ・最終更新 =====================
+      function renderDisplay(d) {
+        if (!d) return;
+        const op = Math.max(0, Math.min(1, (100 - (d.brightness ?? 100)) / 100));
+        document.getElementById("dimmer").style.opacity = String(op);
+      }
+      function renderStale(syncedAt) {
+        const el = document.getElementById("stale");
+        if (!syncedAt) { el.classList.remove("show"); return; }
+        const age = (Date.now() - new Date(syncedAt).getTime()) / 1000;
+        if (age > 180) {
+          el.textContent = `最終更新 ${Math.round(age / 60)} 分前`;
+          el.classList.add("show");
+        } else {
+          el.classList.remove("show");
+        }
+      }
+
+      // ===================== ポーリング（30秒） =====================
+      async function poll() {
+        try {
+          const res = await fetch("/api/data", { cache: "no-store" });
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const data = await res.json();
+          renderWeather(data.weather);
+          renderStrip(data.weather);
+          renderEvents("todayList", data.today, true);
+          renderEvents("tomorrowList", data.tomorrow, false);
+          renderStocks(data.stocks);
+          renderDisplay(data.display);
+          renderStale(data.syncedAt);
+        } catch (err) {
+          // 握りつぶし、次のポーリングで自動回復。
+        }
+      }
+
+      renderClock();
+      renderMiniCal();
+      poll();
+      setInterval(renderClock, 10 * 1000);
+      setInterval(renderMiniCal, 60 * 1000);
+      setInterval(poll, 30 * 1000);
+    </script>
+  </body>
+</html>

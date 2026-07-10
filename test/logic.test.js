@@ -262,3 +262,97 @@ test("withinWindow は通常帯と深夜跨ぎを判定", () => {
 test("nowMinutes は時刻を分換算", () => {
   assert.equal(nowMinutes(new Date("2026-06-25T06:30:00")), 390);
 });
+
+// ---------------------------------------------------------------------------
+// 株価（Twelve Data quote）
+// ---------------------------------------------------------------------------
+
+test("parseTwelveQuote は現在値と前日比%を返す", () => {
+  const { parseTwelveQuote } = require("../lib/logic");
+  const r = parseTwelveQuote({ close: "232.155", percent_change: "1.238" });
+  assert.equal(r.price, 232.16);
+  assert.equal(r.chg, 1.24);
+});
+
+test("parseTwelveQuote は percent_change 欠損時 previous_close から算出", () => {
+  const { parseTwelveQuote } = require("../lib/logic");
+  const r = parseTwelveQuote({ close: "230", previous_close: "220" });
+  assert.equal(r.price, 230);
+  assert.equal(r.chg, 4.55); // (230-220)/220*100
+});
+
+test("parseTwelveQuote はエラー/欠損で null", () => {
+  const { parseTwelveQuote } = require("../lib/logic");
+  assert.equal(parseTwelveQuote(null), null);
+  assert.equal(parseTwelveQuote({ status: "error", message: "x" }), null);
+  assert.equal(parseTwelveQuote({ close: "N/A" }), null);
+  assert.equal(parseTwelveQuote({}), null);
+});
+
+test("groupStocksByExchange は取引所ごとに分け、順序を保つ", () => {
+  const { groupStocksByExchange } = require("../lib/logic");
+  const g = groupStocksByExchange([
+    { symbol: "7203", mic: "XJPX", label: "トヨタ" },
+    { symbol: "AAPL", label: "AAPL" },
+    { symbol: "9984", mic: "XJPX", label: "SBG" },
+    { symbol: "NVDA", label: "NVDA" },
+  ]);
+  assert.equal(g.length, 2); // XJPX と 米国（指定なし）
+  assert.equal(g[0].mic, "XJPX");
+  assert.deepEqual(g[0].items.map((s) => s.symbol), ["7203", "9984"]);
+  assert.equal(g[1].mic, "");
+  assert.deepEqual(g[1].items.map((s) => s.symbol), ["AAPL", "NVDA"]);
+});
+
+test("groupStocksByExchange は exchange と country も区別する", () => {
+  const { groupStocksByExchange } = require("../lib/logic");
+  const g = groupStocksByExchange([
+    { symbol: "7203", exchange: "JPX" },
+    { symbol: "AAPL", country: "United States" },
+    { symbol: "6758", exchange: "JPX" },
+  ]);
+  assert.equal(g.length, 2);
+  assert.deepEqual(g[0].items.map((s) => s.symbol), ["7203", "6758"]);
+  assert.equal(g[0].exchange, "JPX");
+  assert.equal(g[1].country, "United States");
+});
+
+test("groupStocksByExchange は空入力で空配列", () => {
+  const { groupStocksByExchange } = require("../lib/logic");
+  assert.deepEqual(groupStocksByExchange([]), []);
+  assert.deepEqual(groupStocksByExchange(null), []);
+});
+
+// ---------------------------------------------------------------------------
+// 時間別天気の切り出し
+// ---------------------------------------------------------------------------
+
+test("sliceHourlyForecast は現在時刻以降を count 件切り出す", () => {
+  const { sliceHourlyForecast } = require("../lib/logic");
+  const times = [
+    "2026-07-09T12:00",
+    "2026-07-09T13:00",
+    "2026-07-09T14:00",
+    "2026-07-09T15:00",
+  ];
+  const temps = [20, 21, 22, 23];
+  const pops = [0, 10, 20, 30];
+  const now = new Date("2026-07-09T13:20:00");
+  const r = sliceHourlyForecast(times, temps, pops, now, 2);
+  assert.deepEqual(r.temp, [21, 22]);
+  assert.deepEqual(r.pop, [10, 20]);
+});
+
+test("sliceHourlyForecast は該当時刻が無ければ最初の未来時刻から", () => {
+  const { sliceHourlyForecast } = require("../lib/logic");
+  const times = ["2026-07-09T12:00", "2026-07-09T13:00"];
+  const now = new Date("2026-07-09T12:30:00");
+  const r = sliceHourlyForecast(times, [20, 21], [0, 5], now, 5);
+  assert.deepEqual(r.temp, [20, 21]); // 12:00 が現在の時（12時台）に一致
+});
+
+test("sliceHourlyForecast は空配列で null", () => {
+  const { sliceHourlyForecast } = require("../lib/logic");
+  assert.equal(sliceHourlyForecast([], [], [], new Date()), null);
+  assert.equal(sliceHourlyForecast(null, null, null, new Date()), null);
+});

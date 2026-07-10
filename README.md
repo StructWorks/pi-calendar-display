@@ -97,6 +97,7 @@ cp .env.example .env                  # secrets such as Google credentials
 | `GOOGLE_REDIRECT_URI`                                                                   | Defaults to `http://localhost:<PORT>/oauth2callback` if omitted             |
 | `CALENDARS`                                                                             | Calendars to show, as a JSON array string (overrides `calendars` in config) |
 | `WEATHER_LATITUDE` / `WEATHER_LONGITUDE` / `WEATHER_LOCATION_NAME` / `WEATHER_TIMEZONE` | Your installation location                                                   |
+| `TWELVE_DATA_API_KEY`                                                                   | Stock quotes for the `/portrait` ticker (optional; see Portrait dashboard)   |
 | `PORT`                                                                                  | Proxy port (default 3000)                                                    |
 
 You can also keep everything in `config.json` alone (put `google.clientId` / `clientSecret` there directly). Conversely, you can keep no secrets in `config.json` and consolidate them in `.env`.
@@ -107,6 +108,7 @@ You can also keep everything in `config.json` alone (put `google.clientId` / `cl
 | -------------------------- | -------------------------------------------------------------------------------- |
 | `calendars[]`              | Calendars to display. `role` is `events` (normal) or `location` (work location)  |
 | `weather.*`                | Location coordinates, timezone, and display name                                  |
+| `stocks.*`                 | Stock ticker for the `/portrait` view (see Portrait dashboard)                    |
 | `server.port`              | Proxy port (default 3000)                                                         |
 | `allDayLocationKeywords[]` | All-day events whose title contains one of these words are treated as a location |
 | `display.brightness`       | Brightness schedule (see below)                                                  |
@@ -222,6 +224,45 @@ Set them to empty strings to disable screen power control.
 
 ---
 
+## Portrait dashboard (24-inch vertical)
+
+`/portrait` is an alternate, full-screen layout tuned for a **large display in portrait orientation** (e.g. a 24-inch monitor rotated to 1080×1920). It reuses the same proxy data (`/api/data`) and honors the brightness schedule, so it runs alongside the landscape kiosk without extra setup.
+
+Layout, top to bottom:
+
+- **Clock + date** (left) and **current / today / tomorrow weather** (right)
+- **Mini month calendar** (left) and **12-hour temperature + precipitation strip** (right)
+- **Today** and **Tomorrow** schedules, side by side
+- **Stock ticker** (up to 8 symbols, 4×2)
+
+To use it on a rotated monitor, point the kiosk at `/portrait` instead of `/` (in `kiosk.sh`, change the URL to `http://localhost:<PORT>/portrait`), and rotate the display in your OS (e.g. Raspberry Pi OS Screen Configuration, or `display_rotate` / a Wayland output transform).
+
+### Stock ticker (Twelve Data)
+
+The ticker is powered by [Twelve Data](https://twelvedata.com/) (free tier available). Without an API key the ticker is simply hidden; everything else on the page still works.
+
+1. Get a free API key at Twelve Data.
+2. Put it in `.env` as `TWELVE_DATA_API_KEY=…` (preferred) or in `config.json` under `stocks.apiKey`.
+3. List your symbols in `config.json` → `stocks.symbols` (max 8). All symbols are fetched in a single batched request.
+
+```json
+"stocks": {
+  "enabled": true,
+  "refreshSeconds": 300,
+  "symbols": [
+    { "symbol": "7203", "mic": "XJPX", "label": "トヨタ" },
+    { "symbol": "9984", "mic": "XJPX", "label": "SBG" },
+    { "symbol": "AAPL", "label": "AAPL" }
+  ]
+}
+```
+
+> **Symbol format & markets:** use Twelve Data symbols. US tickers are the bare symbol (`AAPL`). For non-US markets, add `mic` (mic_code) — or `exchange` / `country` — per symbol. **Japan (Tokyo)** uses the 4-digit code plus `mic: "XJPX"` (e.g. `7203` = Toyota). Symbols are grouped by market and fetched one request per market (Twelve Data's batch quote takes a single exchange per request). `label` is the on-screen name; `chg` is the percent change vs. the previous close.
+>
+> **Coverage:** the free plan covers US stocks. **Tokyo Stock Exchange (and most non-US markets) require a paid Twelve Data plan** — verify your symbols resolve with your key before relying on them.
+
+---
+
 ## Running as a service (systemd) + kiosk autostart
 
 ### Run the proxy as a service
@@ -264,7 +305,8 @@ See **[SETUP.md](SETUP.md)** for the full, copy-pasteable walkthrough.
 
 | Method | Path              | Purpose                            |
 | ------ | ----------------- | ---------------------------------- |
-| GET    | `/`               | Kiosk display                      |
+| GET    | `/`               | Kiosk display (landscape)          |
+| GET    | `/portrait`       | Portrait dashboard (24-inch)       |
 | GET    | `/remote`         | Phone remote                       |
 | GET    | `/api/data`       | Cached data (JSON)                 |
 | POST   | `/api/command`    | Remote commands                    |
