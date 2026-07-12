@@ -34,8 +34,7 @@ const {
   withinWindow,
   localDateKey,
   monthEventOf,
-  parseTwelveQuote,
-  groupStocksByExchange,
+  parseYahooQuote,
   sliceHourlyForecast,
 } = logic;
 
@@ -104,9 +103,8 @@ function applyEnv(cfg) {
   if (E.WEATHER_LOCATION_NAME) cfg.weather.locationName = E.WEATHER_LOCATION_NAME;
   if (E.WEATHER_TIMEZONE) cfg.weather.timezone = E.WEATHER_TIMEZONE;
 
-  // 株価 API キーは .env（TWELVE_DATA_API_KEY）を優先。
+  // 株価は Yahoo Finance（APIキー不要）。config.stocks.symbols で銘柄を指定。
   cfg.stocks = cfg.stocks || {};
-  if (E.TWELVE_DATA_API_KEY) cfg.stocks.apiKey = E.TWELVE_DATA_API_KEY;
 
   cfg.server = cfg.server || {};
   if (E.PORT) cfg.server.port = Number(E.PORT);
@@ -144,33 +142,25 @@ const CAL_REFRESH_MS =
 const WEATHER_REFRESH_MS =
   ((config.server && config.server.weatherRefreshSeconds) || 1800) * 1000;
 
-// 株価（portrait ビュー用。Twelve Data quote）。config.stocks で指定、最大8銘柄。
+// 株価（portrait ビュー用。Yahoo Finance chart API）。config.stocks で指定、最大8銘柄。
+// 東証は 4桁コード + ".T"（例 7203.T=トヨタ）、指数は "^N225"/"^TPX"、米国株はそのまま。
 const stocksCfg = config.stocks || {};
 const STOCK_REFRESH_MS = (stocksCfg.refreshSeconds || 300) * 1000;
-const STOCK_API_KEY = stocksCfg.apiKey || "";
 const STOCK_SYMBOLS = (Array.isArray(stocksCfg.symbols) ? stocksCfg.symbols : [])
   .slice(0, 8)
   .map((s) => {
     const symbol = typeof s === "string" ? s : s && s.symbol;
+    // ラベル未指定時は先頭の "^" と取引所サフィックス（".T" 等）を除いた表記。
     const label =
       (s && s.label) ||
       String(symbol || "")
         .replace(/^\^/, "")
+        .replace(/\.[A-Za-z]+$/, "")
         .toUpperCase();
-    // 取引所の指定（日本株など）。mic_code / exchange / country のいずれか。
-    const exchange = (s && s.exchange) || "";
-    const mic = (s && (s.mic || s.mic_code)) || "";
-    const country = (s && s.country) || "";
-    return { symbol, label, exchange, mic, country };
+    return { symbol, label };
   })
   .filter((s) => s.symbol);
-const STOCKS_ENABLED =
-  stocksCfg.enabled !== false && STOCK_SYMBOLS.length > 0 && !!STOCK_API_KEY;
-if (stocksCfg.enabled !== false && STOCK_SYMBOLS.length > 0 && !STOCK_API_KEY) {
-  console.warn(
-    "[stocks] Twelve Data の API キーが未設定です（stocks.apiKey / TWELVE_DATA_API_KEY）。株価は無効化されます。"
-  );
-}
+const STOCKS_ENABLED = stocksCfg.enabled !== false && STOCK_SYMBOLS.length > 0;
 
 const remoteCfg = config.remote || {};
 const REMOTE_ENABLED = remoteCfg.enabled !== false;
@@ -376,50 +366,45 @@ async function fetchWeather() {
 }
 
 // ---------------------------------------------------------------------------
-// 株価取得（Twelve Data quote。portrait ビュー用）。全銘柄を1リクエストでバッチ取得。
+// 株価取得（Yahoo Finance chart API。portrait ビュー用）。銘柄ごとに並列取得。
+// APIキー不要。東証・指数・米国株を同一エンドポイントで扱える（サフィックスで区別）。
 // ---------------------------------------------------------------------------
 
 // 銘柄ごとの最終取得値。個別銘柄が一時的に失敗しても前回値を保つ。
 const lastStock = {};
 
-// 1取引所グループ（同一 exchange/mic/country）を1リクエストで取得する。
-async function fetchStockGroup(group) {
-  const symbols = group.items.map((s) => s.symbol).join(",");
-  let url =
-    "https://api.twelvedata.com/quote" +
-    `?symbol=${encodeURIComponent(symbols)}` +
-    `&apikey=${encodeURIComponent(STOCK_API_KEY)}&dp=2`;
-  if (group.exchange) url += `&exchange=${encodeURIComponent(group.exchange)}`;
-  if (group.mic) url += `&mic_code=${encodeURIComponent(group.mic)}`;
-  if (group.country) url += `&country=${encodeURIComponent(group.country)}`;
+// User-Agent が無いと 429 を返すことがあるため付与する。
+const STOCK_UA = "Mozilla/5.0 (compatible; pi-calendar-display)";
+
+// 1銘柄を Yahoo Finance chart API から取得する。
+async function fetchStockOne({ symbol, label }) {
+  const url =
+    "https://query1.finance.yahoo.com/v8/finance/chart/" +
+    encodeURIComponent(symbol) +
+    "?interval=1d&range=5d";
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    const res = await fetch(url, {
+      headers: { "User-Agent": STOCK_UA },
+      signal: AbortSignal.timeout(15000),
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    // レスポンス全体のエラー（不正キー・レート超過・プラン外など）。
-    if (data && data.status === "error") {
-      throw new Error(data.message || "API エラー");
-    }
-    // 複数銘柄は symbol をキーにした連想配列、単一銘柄は quote を直接返す。
-    for (const { symbol, label } of group.items) {
-      const q = group.items.length === 1 ? data : data[symbol];
-      const parsed = parseTwelveQuote(q);
-      if (parsed) {
-        lastStock[label] = { sym: label, price: parsed.price, chg: parsed.chg };
-      } else {
-        console.error(`[stocks] "${symbol}" のクォート取得に失敗`);
-      }
+    const result = data && data.chart && data.chart.result;
+    const meta = Array.isArray(result) && result[0] ? result[0].meta : null;
+    const parsed = parseYahooQuote(meta);
+    if (parsed) {
+      lastStock[label] = { sym: label, price: parsed.price, chg: parsed.chg };
+    } else {
+      console.error(`[stocks] "${symbol}" のクォート取得に失敗`);
     }
   } catch (err) {
-    console.error(`[stocks] グループ取得失敗 (${symbols}):`, err.message);
+    console.error(`[stocks] 取得失敗 (${symbol}):`, err.message);
   }
 }
 
 async function fetchStocks() {
   if (!STOCKS_ENABLED) return;
-  // 取引所ごとにグループ化して並列取得（バッチは取引所指定が全銘柄共通のため）。
-  const groups = groupStocksByExchange(STOCK_SYMBOLS);
-  await Promise.all(groups.map((g) => fetchStockGroup(g)));
+  await Promise.all(STOCK_SYMBOLS.map((s) => fetchStockOne(s)));
 
   // config の並び順で、取得済みのものだけを並べる。
   cache.stocks = STOCK_SYMBOLS.map(({ label }) => lastStock[label]).filter(
@@ -668,7 +653,10 @@ function updateDisplaySchedule() {
 // ---------------------------------------------------------------------------
 
 const BRIGHTNESS_STEPS = [100, 50, 15];
+// cycleView が巡回する通常モード（index.html 内のレイアウト）。
 const VIEW_MODES = ["full", "timeline", "week", "month", "night"];
+// setView で指定できるモード。portrait は別ページ（/portrait）へ遷移するため巡回には含めない。
+const SETTABLE_VIEWS = [...VIEW_MODES, "portrait"];
 
 function setBrightnessOverride(level) {
   cache.display.brightnessOverride = clampLevel(level);
@@ -752,7 +740,7 @@ function handleCommand(action, value) {
       updateDisplaySchedule();
       return { ok: true };
     case "setView": {
-      if (!VIEW_MODES.includes(value)) {
+      if (!SETTABLE_VIEWS.includes(value)) {
         return { ok: false, status: 400, error: "許可外の表示モードです" };
       }
       setViewOverride(value);

@@ -119,6 +119,12 @@ test("server endpoints", async (t) => {
     assert.equal(ok.json.display.view, "night");
   });
 
+  await t.test("setView は portrait を受理する（/portrait へ遷移）", async () => {
+    const ok = await cmd(base, { action: "setView", value: "portrait" });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.json.display.view, "portrait");
+  });
+
   await t.test("setBackground は許可リスト外を拒否、リスト内は受理", async () => {
     const bad = await cmd(base, { action: "setBackground", value: "../../etc/passwd" });
     assert.equal(bad.status, 400);

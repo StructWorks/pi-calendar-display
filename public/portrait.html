@@ -718,8 +718,16 @@
       }
 
       // ===================== 明るさ・最終更新 =====================
+      // follow=1 で来た場合のみ、リモコンで別モードに切替えられたら通常画面へ戻る。
+      // （follow なしで /portrait を直接開いている専用端末は影響を受けない。）
+      const FOLLOW_MODE =
+        new URLSearchParams(location.search).get("follow") === "1";
       function renderDisplay(d) {
         if (!d) return;
+        if (FOLLOW_MODE && d.view && d.view !== "portrait") {
+          location.replace("/");
+          return;
+        }
         const op = Math.max(0, Math.min(1, (100 - (d.brightness ?? 100)) / 100));
         document.getElementById("dimmer").style.opacity = String(op);
       }

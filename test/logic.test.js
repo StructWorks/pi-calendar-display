@@ -264,63 +264,38 @@ test("nowMinutes は時刻を分換算", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 株価（Twelve Data quote）
+// 株価（Yahoo Finance chart API）
 // ---------------------------------------------------------------------------
 
-test("parseTwelveQuote は現在値と前日比%を返す", () => {
-  const { parseTwelveQuote } = require("../lib/logic");
-  const r = parseTwelveQuote({ close: "232.155", percent_change: "1.238" });
-  assert.equal(r.price, 232.16);
-  assert.equal(r.chg, 1.24);
+test("parseYahooQuote は現在値と前日比%を返す", () => {
+  const { parseYahooQuote } = require("../lib/logic");
+  const r = parseYahooQuote({
+    regularMarketPrice: 2823,
+    chartPreviousClose: 2923,
+  });
+  assert.equal(r.price, 2823);
+  assert.equal(r.chg, -3.42); // (2823-2923)/2923*100
 });
 
-test("parseTwelveQuote は percent_change 欠損時 previous_close から算出", () => {
-  const { parseTwelveQuote } = require("../lib/logic");
-  const r = parseTwelveQuote({ close: "230", previous_close: "220" });
+test("parseYahooQuote は chartPreviousClose 欠損時 previousClose を使う", () => {
+  const { parseYahooQuote } = require("../lib/logic");
+  const r = parseYahooQuote({ regularMarketPrice: 230, previousClose: 220 });
   assert.equal(r.price, 230);
   assert.equal(r.chg, 4.55); // (230-220)/220*100
 });
 
-test("parseTwelveQuote はエラー/欠損で null", () => {
-  const { parseTwelveQuote } = require("../lib/logic");
-  assert.equal(parseTwelveQuote(null), null);
-  assert.equal(parseTwelveQuote({ status: "error", message: "x" }), null);
-  assert.equal(parseTwelveQuote({ close: "N/A" }), null);
-  assert.equal(parseTwelveQuote({}), null);
+test("parseYahooQuote は前日終値が無ければ chg=0", () => {
+  const { parseYahooQuote } = require("../lib/logic");
+  const r = parseYahooQuote({ regularMarketPrice: 100 });
+  assert.equal(r.price, 100);
+  assert.equal(r.chg, 0);
 });
 
-test("groupStocksByExchange は取引所ごとに分け、順序を保つ", () => {
-  const { groupStocksByExchange } = require("../lib/logic");
-  const g = groupStocksByExchange([
-    { symbol: "7203", mic: "XJPX", label: "トヨタ" },
-    { symbol: "AAPL", label: "AAPL" },
-    { symbol: "9984", mic: "XJPX", label: "SBG" },
-    { symbol: "NVDA", label: "NVDA" },
-  ]);
-  assert.equal(g.length, 2); // XJPX と 米国（指定なし）
-  assert.equal(g[0].mic, "XJPX");
-  assert.deepEqual(g[0].items.map((s) => s.symbol), ["7203", "9984"]);
-  assert.equal(g[1].mic, "");
-  assert.deepEqual(g[1].items.map((s) => s.symbol), ["AAPL", "NVDA"]);
-});
-
-test("groupStocksByExchange は exchange と country も区別する", () => {
-  const { groupStocksByExchange } = require("../lib/logic");
-  const g = groupStocksByExchange([
-    { symbol: "7203", exchange: "JPX" },
-    { symbol: "AAPL", country: "United States" },
-    { symbol: "6758", exchange: "JPX" },
-  ]);
-  assert.equal(g.length, 2);
-  assert.deepEqual(g[0].items.map((s) => s.symbol), ["7203", "6758"]);
-  assert.equal(g[0].exchange, "JPX");
-  assert.equal(g[1].country, "United States");
-});
-
-test("groupStocksByExchange は空入力で空配列", () => {
-  const { groupStocksByExchange } = require("../lib/logic");
-  assert.deepEqual(groupStocksByExchange([]), []);
-  assert.deepEqual(groupStocksByExchange(null), []);
+test("parseYahooQuote はエラー/欠損で null", () => {
+  const { parseYahooQuote } = require("../lib/logic");
+  assert.equal(parseYahooQuote(null), null);
+  assert.equal(parseYahooQuote({}), null);
+  assert.equal(parseYahooQuote({ regularMarketPrice: "N/A" }), null);
 });
 
 // ---------------------------------------------------------------------------
