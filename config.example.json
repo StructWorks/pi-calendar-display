@@ -19,14 +19,14 @@
     "locationName": "Tokyo",
     "timezone": "Asia/Tokyo"
   },
-  "_stocks_comment": "Optional: powers the /portrait dashboard ticker via Twelve Data (twelvedata.com). Get a free API key and put it in .env as TWELVE_DATA_API_KEY (preferred) or in apiKey below. Max 8 symbols. For non-US markets add mic (mic_code) or exchange/country per symbol; symbols are grouped by market and fetched one request per market. Japan (Tokyo) = 4-digit code + mic XJPX (e.g. 7203 = Toyota) and usually needs a paid plan. label is the on-screen name; chg is percent change vs previous close.",
+  "_stocks_comment": "Optional: powers the /portrait dashboard ticker via Yahoo Finance (no API key needed). Max 8 symbols. Japan (Tokyo) = 4-digit code + '.T' (e.g. 7203.T = Toyota); indices = '^N225' (Nikkei), '^TPX' (TOPIX); US stocks as-is (e.g. AAPL). label is the on-screen name (defaults to the symbol without any '^' prefix or exchange suffix); chg is percent change vs previous close. Data is delayed ~15-20 min and uses an unofficial endpoint.",
   "stocks": {
     "enabled": true,
     "refreshSeconds": 300,
-    "apiKey": "",
     "symbols": [
-      { "symbol": "7203", "mic": "XJPX", "label": "トヨタ" },
-      { "symbol": "9984", "mic": "XJPX", "label": "SBG" },
+      { "symbol": "7203.T", "label": "トヨタ" },
+      { "symbol": "9984.T", "label": "SBG" },
+      { "symbol": "^N225", "label": "日経225" },
       { "symbol": "AAPL", "label": "AAPL" },
       { "symbol": "NVDA", "label": "NVDA" }
     ]

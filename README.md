@@ -97,7 +97,6 @@ cp .env.example .env                  # secrets such as Google credentials
 | `GOOGLE_REDIRECT_URI`                                                                   | Defaults to `http://localhost:<PORT>/oauth2callback` if omitted             |
 | `CALENDARS`                                                                             | Calendars to show, as a JSON array string (overrides `calendars` in config) |
 | `WEATHER_LATITUDE` / `WEATHER_LONGITUDE` / `WEATHER_LOCATION_NAME` / `WEATHER_TIMEZONE` | Your installation location                                                   |
-| `TWELVE_DATA_API_KEY`                                                                   | Stock quotes for the `/portrait` ticker (optional; see Portrait dashboard)   |
 | `PORT`                                                                                  | Proxy port (default 3000)                                                    |
 
 You can also keep everything in `config.json` alone (put `google.clientId` / `clientSecret` there directly). Conversely, you can keep no secrets in `config.json` and consolidate them in `.env`.
@@ -237,29 +236,28 @@ Layout, top to bottom:
 
 To use it on a rotated monitor, point the kiosk at `/portrait` instead of `/` (in `kiosk.sh`, change the URL to `http://localhost:<PORT>/portrait`), and rotate the display in your OS (e.g. Raspberry Pi OS Screen Configuration, or `display_rotate` / a Wayland output transform).
 
-### Stock ticker (Twelve Data)
+### Stock ticker (Yahoo Finance)
 
-The ticker is powered by [Twelve Data](https://twelvedata.com/) (free tier available). Without an API key the ticker is simply hidden; everything else on the page still works.
+The ticker is powered by Yahoo Finance and needs **no API key**. Set `stocks.enabled` to `false` (or leave `symbols` empty) to hide it; everything else on the page still works.
 
-1. Get a free API key at Twelve Data.
-2. Put it in `.env` as `TWELVE_DATA_API_KEY=…` (preferred) or in `config.json` under `stocks.apiKey`.
-3. List your symbols in `config.json` → `stocks.symbols` (max 8). All symbols are fetched in a single batched request.
+List your symbols in `config.json` → `stocks.symbols` (max 8). Each symbol is fetched from Yahoo Finance in parallel.
 
 ```json
 "stocks": {
   "enabled": true,
   "refreshSeconds": 300,
   "symbols": [
-    { "symbol": "7203", "mic": "XJPX", "label": "トヨタ" },
-    { "symbol": "9984", "mic": "XJPX", "label": "SBG" },
+    { "symbol": "7203.T", "label": "トヨタ" },
+    { "symbol": "9984.T", "label": "SBG" },
+    { "symbol": "^N225", "label": "日経225" },
     { "symbol": "AAPL", "label": "AAPL" }
   ]
 }
 ```
 
-> **Symbol format & markets:** use Twelve Data symbols. US tickers are the bare symbol (`AAPL`). For non-US markets, add `mic` (mic_code) — or `exchange` / `country` — per symbol. **Japan (Tokyo)** uses the 4-digit code plus `mic: "XJPX"` (e.g. `7203` = Toyota). Symbols are grouped by market and fetched one request per market (Twelve Data's batch quote takes a single exchange per request). `label` is the on-screen name; `chg` is the percent change vs. the previous close.
+> **Symbol format:** use Yahoo Finance symbols. **Tokyo Stock Exchange** = 4-digit code + `.T` (e.g. `7203.T` = Toyota). **Indices** = `^N225` (Nikkei 225), `^TPX` (TOPIX). **US stocks** are the bare symbol (`AAPL`). `label` is the on-screen name (defaults to the symbol without any `^` prefix or exchange suffix); `chg` is the percent change vs. the previous close.
 >
-> **Coverage:** the free plan covers US stocks. **Tokyo Stock Exchange (and most non-US markets) require a paid Twelve Data plan** — verify your symbols resolve with your key before relying on them.
+> **Note:** this uses Yahoo Finance's unofficial endpoint — data is delayed ~15–20 minutes and the API is not officially supported, so it can change without notice. Fine for an at-a-glance dashboard.
 
 ---
 

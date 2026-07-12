@@ -330,6 +330,7 @@
           <button data-mode="week" onclick="setView('week')">週</button>
           <button data-mode="month" onclick="setView('month')">月</button>
           <button data-mode="night" onclick="setView('night')">ナイト</button>
+          <button data-mode="portrait" onclick="setView('portrait')">ポートレート</button>
         </div>
       </section>
 
@@ -476,6 +477,7 @@
         week: "週",
         month: "月",
         night: "ナイト",
+        portrait: "ポートレート",
       };
       // server からの値はすべて textContent で反映し、HTML 文字列連結を避ける（XSS 対策）。
       function render(d) {

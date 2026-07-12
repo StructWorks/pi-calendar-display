@@ -1253,6 +1253,12 @@
       let currentBg = null;
       function renderDisplay(d) {
         if (!d) return;
+        // portrait はリモコンで選ばれた別ページ。縦置きダッシュボードへ遷移する
+        // （follow=1 を付け、portrait 側は解除時にここへ戻れるようにする）。
+        if (d.view === "portrait") {
+          location.replace("/portrait?follow=1");
+          return;
+        }
         const op = Math.max(0, Math.min(1, (100 - (d.brightness ?? 100)) / 100));
         document.getElementById("dimmer").style.opacity = String(op);
         document.body.dataset.view = d.view || "full";
